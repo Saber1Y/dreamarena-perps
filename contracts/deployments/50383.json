@@ -1,0 +1,15 @@
+{
+  "chainId": 50383,
+  "deployedAt": "2026-10-22T22:03:35.569Z",
+  "deployer": "0x9572F2e86429c6260916143c57cA059030bab8E6",
+  "contracts": {
+    "perpsArena": "0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17"
+  },
+  "transactions": {
+    "deploy": "0x3efc5d1a2c571cddc48a9f77b8b7f5efeb74088818df0dfcbe69683ad455b78a",
+    "fund": "0x4a532e6a797399bf65bd20e8dd7b3cf3904bf193c373e9665bfe01da48f75fec"
+  },
+  "protocol": {
+    "marginBank": "0x478769E1177C0773c43A593DCCc4Ad15F15F1394"
+  }
+}
