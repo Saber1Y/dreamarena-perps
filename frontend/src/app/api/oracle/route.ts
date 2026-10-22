@@ -1,20 +1,15 @@
-// The in-app Oracle panel's backend.
+// The in-app agent panel's backend.
 //
-// This imports mcp-server/src/arena.ts — the SAME chain layer the DreamArena
-// MCP server sits on — and dispatches the same tools by name. An agent and a
-// player therefore drive identical read code, and the panel's tool log records
-// the real MCP tool names with real latency.
+// This imports mcp-server/src/perps.ts, the same chain layer the DreamArena
+// Perps MCP server sits on, and dispatches the same read tools by name. An
+// agent and a player therefore drive identical read code, and the panel's tool
+// log records the real MCP tool names with real latency.
 //
-// Reads need no key. Bets are deliberately NOT exposed here: placing one signs
-// a real order, which belongs in the Arcade tab against the player's own
-// wallet, not a transient server env.
+// Only reads are reachable: runReadTool answers nothing else. Orders sign with
+// the player's own wallet or the agent's own key, never a web server's env.
 
 import { NextRequest, NextResponse } from 'next/server';
-
-// arena.ts reads its config from process.env at module load, with NEXT_PUBLIC_*
-// fallbacks so both the MCP server and this route configure from one set of
-// conventions. Import it as the single source of truth for tool behavior.
-import { runReadTool, type ToolResult } from '../../../../../mcp-server/src/arena';
+import { runReadTool } from '../../../../../mcp-server/src/perps';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,14 +19,7 @@ interface OracleRequest {
   args?: Record<string, unknown>;
 }
 
-async function dispatch(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
-  if (tool === 'dreamarena_place_bet') {
-    // Same honesty as the read-only MCP server, honed deliberately: a panel
-    // must not move money on the user's behalf via a server session key.
-    return { ok: false, error: 'No PRIVATE_KEY configured — this server is read-only.' };
-  }
-  return runReadTool(tool, args);
-}
+const dispatch = (tool: string, args: Record<string, unknown>) => runReadTool(tool, args);
 
 export async function POST(req: NextRequest) {
   let body: OracleRequest;

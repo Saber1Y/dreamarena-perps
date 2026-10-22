@@ -1,21 +1,22 @@
 {
-  "name": "dreamarena-mcp",
-  "version": "1.0.0",
+  "name": "dreamarena-perps-mcp",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "dreamarena-mcp": "dist/index.js"
+    "dreamarena-perps-mcp": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "check": "node scripts/check-mcp.mjs"
+    "check": "node scripts/check-mcp.mjs",
+    "test": "tsc && node --test dist/limits.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "@somnia-chain/markets-sdk": "0.28.1",
-    "viem": "^2.21.0",
+    "@somnia-chain/markets-sdk": "0.32.1",
+    "viem": "2.56.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

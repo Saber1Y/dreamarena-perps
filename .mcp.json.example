@@ -5,7 +5,11 @@
       "args": ["./mcp-server/dist/index.js"],
       "env": {
         "PRIVATE_KEY": "",
-        "MAX_BET_TUSDC": "25"
+        "OWNER_ADDRESS": "",
+        "ALLOWED_MARKETS": "BTC,ETH,SOL",
+        "MAX_ORDER_USDSO": "100",
+        "MAX_LEVERAGE": "5",
+        "MAX_LOSS_USDSO": "100"
       }
     }
   }

@@ -1,26 +1,30 @@
 #!/usr/bin/env node
-// DreamArena MCP server — lets an agent read and play the arcade.
+// DreamArena Perps MCP server: lets an agent read dreamDEX perps and trade a
+// wallet that linked it with Link a Bot.
 //
-// Reads work with no key. Writes need PRIVATE_KEY and are bounded by
-// MAX_BET_TUSDC, enforced in the chain layer rather than in a prompt.
+// Reads work with no key. Writes need PRIVATE_KEY (the linked bot key) and
+// pass the limits in limits.ts, enforced in the order path rather than in a
+// prompt. Closing is always allowed; it is how the agent gets out of trouble.
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import type { Address } from 'viem';
 import {
-  account,
+  bot,
+  cancelOrder,
   closeExchange,
   config,
-  describe,
-  findMarket,
-  placeBet,
+  execute,
+  owner,
+  planClose,
+  planLimit,
+  planOpen,
   runReadTool,
-  type ArenaMarket,
+  type OrderPlan,
   type ToolResult,
-} from './arena.js';
+} from './perps.js';
 
-const server = new McpServer({ name: 'dreamarena', version: '1.0.0' });
+const server = new McpServer({ name: 'dreamarena-perps', version: '2.0.0' });
 
 /** MCP tools return content blocks; JSON keeps the agent's parsing honest. */
 const json = (value: unknown) => ({
@@ -33,150 +37,160 @@ const fail = (message: string) => ({
 });
 
 /** One read pipe for both the MCP surface and the in-app panel. */
-const read = (result: ToolResult) => (result.ok ? json(result.content) : fail(result.error ?? 'Read failed.'));
+const read = (result: ToolResult) => (result.ok ? json(result.content) : fail(result.error));
+
+const symbol = z.string().min(1).describe('Base symbol of the perp market, like "ETH" or "BTC"');
+const side = z.enum(['long', 'short']);
+const notionalUsdso = z.number().positive().describe('Order size in USDso of notional (size times price), not margin');
+
+/** Plan, refuse if a limit says so, otherwise execute. */
+async function trade(plan: () => Promise<OrderPlan>) {
+  if (!bot) return fail('No PRIVATE_KEY configured, so this server is read-only.');
+  try {
+    const planned = await plan();
+    if (planned.refusal) return fail(`Refused by the agent's limits: ${planned.refusal}`);
+    return json(await execute(planned));
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : 'The order failed.');
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  'dreamarena_list_markets',
-  {
-    title: 'List live markets',
-    description:
-      'List the DreamDEX binary markets currently open for trading, soonest to expire first. ' +
-      'These are real rolling BTC/ETH series that mint a fresh market every 60s-5m.',
-    inputSchema: { limit: z.number().int().min(1).max(50).optional() },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ limit }) => read(await runReadTool('dreamarena_list_markets', { limit })),
-);
-
-server.registerTool(
-  'dreamarena_get_odds',
-  {
-    title: 'Get market odds',
-    description:
-      'Read both sides of a market\'s order book. Prices are probabilities (0-1): a share bought ' +
-      'at 0.40 costs 0.40 tUSDC and redeems for 1 tUSDC if that side wins.',
-    inputSchema: {
-      market: z.string().describe('A bytes32 marketId, or an asset symbol like "BTC" for the soonest market'),
-    },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ market }) => read(await runReadTool('dreamarena_get_odds', { market })),
-);
-
-server.registerTool(
-  'dreamarena_assess_risk',
-  {
-    title: 'Assess market risk',
-    description:
-      'Score one side of a market 1-10 from what the book actually shows: time to expiry, ' +
-      'bid-ask spread, and how far the odds sit from a coin flip.',
-    inputSchema: {
-      market: z.string().describe('A bytes32 marketId, or an asset symbol like "BTC"'),
-      direction: z.enum(['up', 'down']),
-    },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ market, direction }) =>
-    read(await runReadTool('dreamarena_assess_risk', { market, direction })),
-);
-
-server.registerTool(
-  'dreamarena_get_streak',
-  {
-    title: 'Get player streak',
-    description:
-      'Read a player\'s arcade record from ArcadeEngine: current win streak, multiplier, ' +
-      'record, and the next milestone. The streak is consecutive wins, moved only by the ' +
-      'oracle\'s own resolution.',
-    inputSchema: {
-      address: z
-        .string()
-        .regex(/^0x[a-fA-F0-9]{40}$/)
-        .optional()
-        .describe('Defaults to this server\'s own wallet'),
-    },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ address }) => read(await runReadTool('dreamarena_get_streak', { address })),
-);
-
-server.registerTool(
-  'dreamarena_get_balances',
-  {
-    title: 'Get wallet balances',
-    description:
-      'Read a wallet\'s spendable tUSDC and native STT (gas) on Somnia Shannon. ' +
-      'tUSDC is the collateral every market settles in; STT pays the transaction fee.',
-    inputSchema: {
-      address: z
-        .string()
-        .regex(/^0x[a-fA-F0-9]{40}$/)
-        .optional()
-        .describe('Defaults to this server\'s own wallet'),
-    },
-    annotations: { readOnlyHint: true },
-  },
-  async ({ address }) => read(await runReadTool('dreamarena_get_balances', { address })),
-);
-
-server.registerTool(
-  'dreamarena_list_arenas',
-  {
-    title: 'List arenas',
-    description:
-      'List every deployed arena (builder DAO) from the CommunityDAOFactory: its builder code, ' +
-      'treasury, and the builder fee it earns on orders routed through it.',
-    inputSchema: {},
-    annotations: { readOnlyHint: true },
-  },
-  async () => read(await runReadTool('dreamarena_list_arenas')),
-);
-
-server.registerTool(
   'dreamarena_status',
   {
-    title: 'Server status',
+    title: 'Agent status',
     description:
-      'What this server is wired to and what it is allowed to do — network, contracts, ' +
-      'whether a signer is loaded, and the per-bet cap.',
+      'What this agent is wired to and allowed to do: the network, the account it trades, ' +
+      'whether it can sign, and its limits (allowed markets, per-order size, leverage, loss limit).',
     inputSchema: {},
     annotations: { readOnlyHint: true },
   },
   async () => read(await runReadTool('dreamarena_status')),
 );
 
+server.registerTool(
+  'dreamarena_list_markets',
+  {
+    title: 'List perp markets',
+    description:
+      'Every dreamDEX perp market on testnet with its max leverage, funding rate, open interest and ' +
+      'whether this agent may open positions in it. Prices here are indexer snapshots; use ' +
+      'dreamarena_get_market for the live mark and book.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => read(await runReadTool('dreamarena_list_markets')),
+);
+
+server.registerTool(
+  'dreamarena_get_market',
+  {
+    title: 'Get a market',
+    description: "One market's live on-chain mark price, spread, and the top five levels of each side of the book.",
+    inputSchema: { symbol },
+    annotations: { readOnlyHint: true },
+  },
+  async (args) => read(await runReadTool('dreamarena_get_market', args)),
+);
+
+server.registerTool(
+  'dreamarena_get_account',
+  {
+    title: 'Get the account',
+    description:
+      'The traded account: equity, account leverage, open positions with entry, mark, unrealized PnL and ' +
+      'liquidation price, open orders, and whether the loss limit has switched it to reduce-only.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => read(await runReadTool('dreamarena_get_account')),
+);
+
+server.registerTool(
+  'dreamarena_preview_order',
+  {
+    title: 'Preview an order',
+    description:
+      'Dry-run a market order without sending it: the size, the price it would carry, the projected ' +
+      'account leverage and liquidation price, and whether the agent limits allow it.',
+    inputSchema: { symbol, side, notionalUsdso },
+    annotations: { readOnlyHint: true },
+  },
+  async (args) => read(await runReadTool('dreamarena_preview_order', args)),
+);
+
 // ---------------------------------------------------------------------------
-// Write
+// Writes
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  'dreamarena_place_bet',
+  'dreamarena_open_position',
   {
-    title: 'Place a bet',
+    title: 'Open or add to a position',
     description:
-      'Place a REAL order on a live market, spending REAL testnet tUSDC, then record the entry ' +
-      'with ArcadeEngine so it counts towards the streak. Confirm the stake with the user ' +
-      'before calling. Capped per bet by the server; check dreamarena_status for the limit.',
+      'Send a REAL market (immediate-or-cancel) order that opens or adds to a long or short. It refuses to ' +
+      'flip an opposite position, and refuses anything outside the agent limits. Confirm size and side with ' +
+      'the user first; preview with dreamarena_preview_order.',
+    inputSchema: { symbol, side, notionalUsdso },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async ({ symbol, side, notionalUsdso }) => trade(() => planOpen(symbol, side, notionalUsdso)),
+);
+
+server.registerTool(
+  'dreamarena_close_position',
+  {
+    title: 'Close a position',
+    description:
+      'Send a REAL market order that closes some or all of an open position. It can only shrink the ' +
+      'position, so it is always allowed, even past the loss limit.',
     inputSchema: {
-      market: z.string().describe('A bytes32 marketId, or an asset symbol like "BTC"'),
-      direction: z.enum(['up', 'down']),
-      stake: z.number().positive().describe('tUSDC to spend — this is the maximum loss'),
+      symbol,
+      percent: z.number().gt(0).max(100).optional().describe('Share of the position to close, default 100'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
-  async ({ market, direction, stake }) => {
-    if (!account) return fail('No PRIVATE_KEY configured — this server is read-only.');
-    const found = await findMarket(market);
-    if (!found) return fail(`No live market matches "${market}".`);
+  async ({ symbol, percent }) => trade(() => planClose(symbol, percent ?? 100)),
+);
+
+server.registerTool(
+  'dreamarena_place_limit_order',
+  {
+    title: 'Place a limit order',
+    description:
+      'Rest a REAL limit order on the book. It counts as adding exposure, so every agent limit applies. ' +
+      'postOnly makes sure it never takes liquidity. Returns the order id for dreamarena_cancel_order.',
+    inputSchema: {
+      symbol,
+      side,
+      price: z.number().positive().describe('Limit price in USDso per whole base unit'),
+      notionalUsdso,
+      postOnly: z.boolean().optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async ({ symbol, side, price, notionalUsdso, postOnly }) =>
+    trade(() => planLimit(symbol, side, price, notionalUsdso, postOnly ?? false)),
+);
+
+server.registerTool(
+  'dreamarena_cancel_order',
+  {
+    title: 'Cancel an order',
+    description: 'Cancel one resting order by its numeric id (from dreamarena_get_account or dreamarena_place_limit_order).',
+    inputSchema: { symbol, orderId: z.string().regex(/^\d+$/) },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  },
+  async ({ symbol, orderId }) => {
+    if (!bot) return fail('No PRIVATE_KEY configured, so this server is read-only.');
     try {
-      const outcome = await placeBet(found, direction === 'up', stake);
-      return json({ market: describe(found), direction, ...outcome });
+      return json(await cancelOrder(symbol, orderId));
     } catch (err) {
-      return fail(err instanceof Error ? err.message : 'The bet failed.');
+      return fail(err instanceof Error ? err.message : 'The cancel failed.');
     }
   },
 );
@@ -186,10 +200,11 @@ server.registerTool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  // stdout is the protocol channel — anything logged there corrupts it.
+  // stdout is the protocol channel; anything logged there corrupts it.
+  const limits = config.limits;
   console.error(
-    `dreamarena-mcp ready · ${account ? `wallet ${account.address}` : 'read-only'} · ` +
-      `cap ${config.maxBetTusdc} tUSDC`,
+    `dreamarena-perps-mcp ready · ${bot ? `signer ${bot.address}` : 'read-only'} · trades ${owner ?? 'nothing'} · ` +
+      `markets ${limits.markets.join(',')} · max order ${limits.maxOrderUsdso} USDso · max ${limits.maxLeverage}x · loss limit ${limits.maxLossUsdso} USDso`,
   );
 }
 
@@ -201,6 +216,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 main().catch((err) => {
-  console.error('dreamarena-mcp failed to start:', err);
+  console.error('dreamarena-perps-mcp failed to start:', err);
   process.exit(1);
 });
