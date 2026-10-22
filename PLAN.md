@@ -79,6 +79,9 @@ Scripts are in `scripts/` (`m0-markets.mjs`, `m0-event-rate.mjs`, `m0-first-orde
 - MarginBank emitted about 9,800 `PositionUpdated` and 0 `PositionLiquidated` in one hour, across 304 accounts. Subscribing to every `PositionUpdated` would cost roughly 280 times what `ArcadeEngine` paid, so subscriptions are filtered per player.
 - The Reactivity precompile is live on Hideki: `getSubscriptionInfo` returns real subscriptions, including one owned by dreamDEX's own OracleHub (`0xe40d…E32b`). The filter takes up to four topics, so topic1 can pin the account.
 - The paper USDso campaign grants 1,000 USDso with a 20x voucher leverage cap, and about 406k claims remain.
+- STT sent to Shannon reaches Hideki through the SDK's Hyperlane bridge (`scripts/bridge-stt.mjs`): 33 STT landed in about 5 seconds.
+- The paper USDso claim reverts for a fresh wallet with error `0x3e31dcc2`, even though `getPerpVoucherEligibility` says eligible. Claims appear to be gated, likely behind joining the Perps Arena in the app. Filed as `feedback/01` and `feedback/02`.
+- Consequence: the bot trades the user's Perps Arena wallet through Link a Bot, which is also what the bounty asks for ("Trade with your Perps Arena balance"). That moves the linked-wallet order path from M1 into M0.
 
 ## Risks
 
