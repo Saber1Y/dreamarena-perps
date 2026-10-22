@@ -47,7 +47,9 @@ The MCP server enforces a maximum order size, a maximum leverage, a market allow
 ### Scoring path
 
 MarginBank is a singleton that emits `PositionUpdated(account, perpPool, newSize, avgEntryPrice, realizedPnl, entryFundingIndex)` and `PositionLiquidated(account, perpPool, sizeDelta, markPrice)`.
-`PerpsArena` extends `SomniaEventHandler`, pins the emitter and topic, ignores accounts not in a challenge, caps work per callback, and exposes a permissionless `settle()` for anything the callback misses.
+`PerpsArena` extends `SomniaEventHandler` and opens one subscription per active run, filtered to emitter MarginBank and topic1 equal to the player's address, then closes it when the run ends.
+It pins the emitter, caps work per callback, and exposes a permissionless `settle()` for anything the callback misses.
+A single unfiltered subscription is not viable: see the M0 findings.
 
 Challenges:
 
@@ -68,11 +70,21 @@ Challenges:
 
 Feedback reports go into `feedback/` as issues turn up, not at the end.
 
+## M0 findings (Oct 22)
+
+Scripts are in `scripts/` (`m0-markets.mjs`, `m0-event-rate.mjs`, `m0-first-order.mjs`).
+
+- SDK reads work: 21 perp markets, every row on MarginBank `0x4787…1394`, `getPerpSystemConfig` reports `fullyWired` and `maxLeverageLimit` 20.
+- One run in three failed on the SDK's WebSocket genesis check with a timeout, while raw WebSocket connects took about 1.2s against the SDK's 4s limit. Not reproducible enough to report yet.
+- MarginBank emitted about 9,800 `PositionUpdated` and 0 `PositionLiquidated` in one hour, across 304 accounts. Subscribing to every `PositionUpdated` would cost roughly 280 times what `ArcadeEngine` paid, so subscriptions are filtered per player.
+- The Reactivity precompile is live on Hideki: `getSubscriptionInfo` returns real subscriptions, including one owned by dreamDEX's own OracleHub (`0xe40d…E32b`). The filter takes up to four topics, so topic1 can pin the account.
+- The paper USDso campaign grants 1,000 USDso with a 20x voucher leverage cap, and about 406k claims remain.
+
 ## Risks
 
-1. Reactivity on Hideki is unproven; it was verified on Shannon only. Fallback: scoring through a permissionless `settle()`.
-2. `PositionUpdated` fires for every trader on every market, so callback gas may be far above the 1.7 STT a day `ArcadeEngine` used. Fallback: react only to `PositionLiquidated` and score closes through `settle()`.
-3. Whether `realizedPnl` is cumulative or per change is unknown, and Streak depends on it.
+1. A callback into our own contract on Hideki is not yet observed. dreamDEX's own subscription there makes this low risk. Fallback: scoring through a permissionless `settle()`.
+2. A per-player subscription needs the arena contract to hold 32 STT, and each callback is paid from it. Cost per run must be measured in M2.
+3. `realizedPnl` looks cumulative within a position (one account's value rose 0.18, 0.36, 1.95 across three reductions). Whether it resets on close is checked by `m0-first-order.mjs`.
 4. It is unconfirmed whether the SDK's `placePerpOrder` can act for a linked wallet, or whether the agent must call `placeOrderFor` on the pool directly.
 5. Paper USDso only opens positions in allowlisted markets, and an isolated account trades one market only.
 
