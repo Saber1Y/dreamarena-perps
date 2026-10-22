@@ -1,0 +1,14 @@
+{
+  "name": "dreamarena-perps-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "markets": "node m0-markets.mjs",
+    "events": "node m0-event-rate.mjs",
+    "order": "node --env-file=.env m0-first-order.mjs"
+  },
+  "dependencies": {
+    "@somnia-chain/markets-sdk": "0.32.1",
+    "viem": "2.56.0"
+  }
+}
