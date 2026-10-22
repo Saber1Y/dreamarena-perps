@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "dreamarena-perps": {
+      "command": "node",
+      "args": ["./mcp-server/dist/index.js"],
+      "env": {
+        "PRIVATE_KEY": "",
+        "MAX_BET_TUSDC": "25"
+      }
+    }
+  }
+}

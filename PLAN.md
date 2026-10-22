@@ -1,0 +1,82 @@
+# DreamArena Perps - build plan
+
+Entry for the [dreamDEX Perps Builder Bounty](https://dorahacks.io/hackathon/dreamdex-perps-bounty/detail), MVP track (bots and agents), plus the feedback track.
+Deadline: November 1, 23:59 UTC.
+
+## The product
+
+A leverage arcade and AI agent for dreamDEX perps.
+Players take on challenges with their own wallet, or link an agent key that trades for them inside hard limits.
+The chain scores each run through Somnia Reactivity.
+
+## Network
+
+| | |
+| --- | --- |
+| Chain | Hideki testnet (shown as the DreamDEX region in the app), chain ID 50383 |
+| RPC | `https://api.hideki2.infra.testnet.somnia.network` |
+| WebSocket | `wss://api.hideki2.infra.testnet.somnia.network/ws` |
+| Indexer | `https://hideki-dev.smk.somnia.host/v1/graphql` |
+| SDK | `@somnia-chain/markets-sdk` 0.32.1 with `SOMNIA_HIDEKI_TESTNET_ADDRESSES` and `hidekiTestnet` |
+| MarginBank | `0x478769E1177C0773c43A593DCCc4Ad15F15F1394` |
+| Collateral (USDso) | `0xed7993A74dAe1e6656B704A424DcD8711aAf4F72` |
+
+Per-market addresses (`poolAddress`, `marginBank`, `stopRegistry`) are read off the market row, never hardcoded.
+
+## Architecture
+
+```
+contracts/    PerpsArena.sol: reactive scoreboard, holds no funds
+mcp-server/   perps agent: reads plus place/cancel/reduce, limits enforced in code
+frontend/     Next.js app: Arena, Agent, Leaderboard, Profile, Reactivity monitor
+scripts/      prove-perps: real order to tx hashes, as evidence
+feedback/     one Markdown file per bug or doc gap
+```
+
+### Trading path
+
+The player trades with their own wallet through `listPerpMarkets`, `getMaxPerpOrderSize` and `placePerpOrder`.
+Every order is sized against `getMaxPerpOrderSize` first and sent with a 10M gas limit.
+New players claim the 1,000 paper USDso credit with `claimPerpVoucher`.
+
+### Agent path
+
+The player links the agent key to their wallet with Link a Bot, which lets it place, cancel and reduce orders only.
+The MCP server enforces a maximum order size, a maximum leverage, a market allowlist and a reduce-only switch after a set loss, in code rather than in the prompt.
+
+### Scoring path
+
+MarginBank is a singleton that emits `PositionUpdated(account, perpPool, newSize, avgEntryPrice, realizedPnl, entryFundingIndex)` and `PositionLiquidated(account, perpPool, sizeDelta, markPrice)`.
+`PerpsArena` extends `SomniaEventHandler`, pins the emitter and topic, ignores accounts not in a challenge, caps work per callback, and exposes a permissionless `settle()` for anything the callback misses.
+
+Challenges:
+
+- **Survivor**: open at X or higher leverage and hold N minutes without liquidation. A liquidation ends the run in the same block. After N minutes a permissionless `claimSurvival()` reads the live position.
+- **Streak**: consecutive closes in profit, detected when `newSize` reaches 0 with realized PnL up.
+- **Boss Battle**: three profitable closes in a row defeat the boss.
+
+## Milestones
+
+| Dates | Milestone | Done when |
+| --- | --- | --- |
+| Oct 21-22 | M0: check the risky parts | A script claims paper USDso and places a real perp order. A test contract subscribed to MarginBank `PositionUpdated` receives a callback. The event rate is measured. |
+| Oct 23-24 | M1: perps agent | The MCP server places, reduces and cancels real orders through a linked key, with every limit tested. |
+| Oct 25-27 | M2: PerpsArena | Contract and tests pass, deployed and subscribed on Hideki, a real close or liquidation updates a run in the same block. |
+| Oct 28-30 | M3: frontend | Arena, Agent, Leaderboard, Profile and the monitor run on live data, checked on mobile and in every state. |
+| Oct 30-31 | M4: evidence | Recorded run with tx hashes, README with a real-vs-pending table, demo video, 2-3 X posts tagging @DreamDEXSomnia. |
+| Nov 1 | Buffer | Submit by about 12:00 UTC. |
+
+Feedback reports go into `feedback/` as issues turn up, not at the end.
+
+## Risks
+
+1. Reactivity on Hideki is unproven; it was verified on Shannon only. Fallback: scoring through a permissionless `settle()`.
+2. `PositionUpdated` fires for every trader on every market, so callback gas may be far above the 1.7 STT a day `ArcadeEngine` used. Fallback: react only to `PositionLiquidated` and score closes through `settle()`.
+3. Whether `realizedPnl` is cumulative or per change is unknown, and Streak depends on it.
+4. It is unconfirmed whether the SDK's `placePerpOrder` can act for a linked wallet, or whether the agent must call `placeOrderFor` on the pool directly.
+5. Paper USDso only opens positions in allowlisted markets, and an isolated account trades one market only.
+
+## Provenance
+
+The first commit imports reusable code unchanged from [Saber1Y/DreamBuild](https://github.com/Saber1Y/DreamBuild) at `173b7337`.
+Everything after it is built during the bounty.
