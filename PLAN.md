@@ -82,12 +82,18 @@ Scripts are in `scripts/` (`m0-markets.mjs`, `m0-event-rate.mjs`, `m0-first-orde
 - STT sent to Shannon reaches Hideki through the SDK's Hyperlane bridge (`scripts/bridge-stt.mjs`): 33 STT landed in about 5 seconds.
 - The paper USDso claim reverts for a fresh wallet with error `0x3e31dcc2`, even though `getPerpVoucherEligibility` says eligible. Claims appear to be gated, likely behind joining the Perps Arena in the app. Filed as `feedback/01` and `feedback/02`.
 - Consequence: the bot trades the user's Perps Arena wallet through Link a Bot, which is also what the bounty asks for ("Trade with your Perps Arena balance"). That moves the linked-wallet order path from M1 into M0.
+- Link a Bot writes one OperatorPermissionsRegistry (`0x6B2F…8D3a`) event per perp pool, with topics (pool, owner, bot). The linked Arena wallet is `0x85f989B157087afF8adc6019F2C381fCF6ce6c2b`.
+- **First real orders (Oct 22)**, placed by the bot for the linked wallet through `PerpPool.placeOrderFor` (`scripts/m0-linked-order.mjs`). The SDK's trader has no perps `placeOrderFor`, so the script uses the documented signature.
+  - Open long 0.0103 ETH at 2408.5, 3,085,524 gas: [`0x14075187…c788af`](https://explorer.testnet.somnia.network/tokyo/tx/0x14075187df1ea5632b6d8a0be0842bd2f18bb947976c122e180c86da54c788af)
+  - Close, 1,594,305 gas: [`0x061075c6…ad04d0f`](https://explorer.testnet.somnia.network/tokyo/tx/0x061075c6b87335cff0ea81316e6a62ab595f7c371c9bd6a2e52804655ad04d0f)
+  - The closing `PositionUpdated` has `newSize` 0 and `realizedPnl` -0.002987 USDso, the trade's result. Whether a partial close reports the chunk or the running total is still open.
+- Remaining M0 item: watch a Reactivity callback land in a contract of ours. That moves to the start of M2, where the arena contract gets deployed anyway.
 
 ## Risks
 
 1. A callback into our own contract on Hideki is not yet observed. dreamDEX's own subscription there makes this low risk. Fallback: scoring through a permissionless `settle()`.
 2. A per-player subscription needs the arena contract to hold 32 STT, and each callback is paid from it. Cost per run must be measured in M2.
-3. `realizedPnl` looks cumulative within a position (one account's value rose 0.18, 0.36, 1.95 across three reductions). Whether it resets on close is checked by `m0-first-order.mjs`.
+3. On a full open-then-close, the closing event's `realizedPnl` is the trade's result, which is all Streak needs. Partial closes are still unverified, so Streak counts only full closes.
 4. It is unconfirmed whether the SDK's `placePerpOrder` can act for a linked wallet, or whether the agent must call `placeOrderFor` on the pool directly.
 5. Paper USDso only opens positions in allowlisted markets, and an isolated account trades one market only.
 
