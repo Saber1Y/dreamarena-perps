@@ -2,75 +2,54 @@ const fs = require('fs');
 const path = require('path');
 const hre = require('hardhat');
 
-// Protocol addresses are identical on testnet and mainnet via CREATE3, and are
-// the same values the markets-sdk exports as SOMNIA_TESTNET_ADDRESSES.
-const BINARY_MARKETS_MODULE = '0x3ecC694Cef705358864a646142ac17A90E29e388';
-const OUTCOME_TOKEN = '0xB52c5934113Af5c0Bb20eb3C72290C8215f755b9';
-const ORACLE_HUB = '0xe40db387cC98601Dd11bd634fF2f3AD5686dE32b';
+// dreamDEX perps MarginBank on Hideki (chain 50383), from the developer docs'
+// contract table and every market row's `marginBank`.
+const MARGIN_BANK = '0x478769E1177C0773c43A593DCCc4Ad15F15F1394';
 
-// The precompile requires the SUBSCRIPTION OWNER — the engine contract itself,
-// not the deployer — to hold at least this much.
-const SUBSCRIPTION_MINIMUM = hre.ethers.parseEther('32');
+// The precompile requires the SUBSCRIPTION OWNER, the arena contract itself,
+// to hold at least 32 STT, and every callback is paid from that balance. The
+// default leaves headroom above the minimum for callbacks.
+const FUND = hre.ethers.parseEther(process.env.ARENA_FUND_STT ?? '33');
 
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
-  const balance = await hre.ethers.provider.getBalance(deployer.address);
+  const { chainId } = await hre.ethers.provider.getNetwork();
+  console.log('Network: ', hre.network.name, chainId.toString());
   console.log('Deployer:', deployer.address);
-  console.log('Balance: ', hre.ethers.formatEther(balance), 'STT\n');
+  console.log('Balance: ', hre.ethers.formatEther(await hre.ethers.provider.getBalance(deployer.address)), 'STT\n');
 
-  const ArcadeEngine = await hre.ethers.getContractFactory('ArcadeEngine');
-  const engine = await ArcadeEngine.deploy(BINARY_MARKETS_MODULE, OUTCOME_TOKEN, ORACLE_HUB);
-  await engine.waitForDeployment();
-  const engineAddress = await engine.getAddress();
-  console.log('ArcadeEngine        ', engineAddress);
+  const Arena = await hre.ethers.getContractFactory('PerpsArena');
+  const arena = await Arena.deploy(MARGIN_BANK);
+  await arena.waitForDeployment();
+  const address = await arena.getAddress();
+  const deployTx = arena.deploymentTransaction().hash;
+  console.log('PerpsArena', address);
+  console.log('deploy tx ', deployTx);
 
-  const Factory = await hre.ethers.getContractFactory('CommunityDAOFactory');
-  const factory = await Factory.deploy();
-  await factory.waitForDeployment();
-  const factoryAddress = await factory.getAddress();
-  console.log('CommunityDAOFactory ', factoryAddress);
-
-  // The engine pays for its own reactivity callbacks, so it has to be funded
-  // before it can subscribe. Top it up from the deployer if we can afford it.
-  const engineBalance = await hre.ethers.provider.getBalance(engineAddress);
-  if (engineBalance < SUBSCRIPTION_MINIMUM) {
-    const shortfall = SUBSCRIPTION_MINIMUM - engineBalance;
-    const spendable = await hre.ethers.provider.getBalance(deployer.address);
-    if (spendable > shortfall + hre.ethers.parseEther('1')) {
-      console.log(`\nFunding engine with ${hre.ethers.formatEther(shortfall)} STT...`);
-      await (await deployer.sendTransaction({ to: engineAddress, value: shortfall })).wait();
-    } else {
-      console.log(
-        `\n! Engine holds ${hre.ethers.formatEther(engineBalance)} STT and needs 32 STT ` +
-          `before subscribeToOracle() will succeed.\n` +
-          `  Send STT to ${engineAddress}, then run scripts/subscribe.js.`,
-      );
-    }
+  const held = await hre.ethers.provider.getBalance(address);
+  let fundTx = null;
+  if (held < FUND) {
+    const top = FUND - held;
+    console.log(`\nFunding the arena with ${hre.ethers.formatEther(top)} STT...`);
+    const receipt = await (await deployer.sendTransaction({ to: address, value: top })).wait();
+    fundTx = receipt.hash;
+    console.log('fund tx   ', fundTx);
   }
 
   const record = {
-    chainId: 50312,
+    chainId: Number(chainId),
     deployedAt: new Date().toISOString(),
     deployer: deployer.address,
-    contracts: {
-      arcadeEngine: engineAddress,
-      daoFactory: factoryAddress,
-    },
-    protocol: {
-      binaryMarketsModule: BINARY_MARKETS_MODULE,
-      outcomeToken: OUTCOME_TOKEN,
-      oracleHub: ORACLE_HUB,
-    },
+    contracts: { perpsArena: address },
+    transactions: { deploy: deployTx, fund: fundTx },
+    protocol: { marginBank: MARGIN_BANK },
   };
   const out = path.join(__dirname, '..', 'deployments');
   fs.mkdirSync(out, { recursive: true });
-  fs.writeFileSync(path.join(out, '50312.json'), JSON.stringify(record, null, 2) + '\n');
-
-  console.log('\nWrote contracts/deployments/50312.json');
-  console.log('\nAdd to frontend/.env.local:');
-  console.log(`NEXT_PUBLIC_ARCADE_ENGINE=${engineAddress}`);
-  console.log(`NEXT_PUBLIC_DAO_FACTORY=${factoryAddress}`);
-  console.log('\nThen: npx hardhat run scripts/subscribe.js --network somniaTestnet');
+  const file = path.join(out, `${chainId}.json`);
+  fs.writeFileSync(file, JSON.stringify(record, null, 2) + '\n');
+  console.log(`\nWrote ${path.relative(process.cwd(), file)}`);
+  console.log(`Arena balance: ${hre.ethers.formatEther(await hre.ethers.provider.getBalance(address))} STT`);
 }
 
 main()

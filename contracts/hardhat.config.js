@@ -4,7 +4,7 @@ require('dotenv').config();
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
 // ponytail: no hard exit here — `compile` and `test` need no key. An empty
-// accounts array simply makes any --network somniaTestnet send fail loudly.
+// accounts array simply makes any --network hideki send fail loudly.
 const accounts = PRIVATE_KEY ? [PRIVATE_KEY] : [];
 
 /** @type import('hardhat/config').HardhatUserConfig */
@@ -16,8 +16,6 @@ module.exports = {
         enabled: true,
         runs: 200,
       },
-      // The module's markets() returns a 14-field tuple — too deep for the
-      // legacy codegen's stack.
       viaIR: true,
     },
   },
@@ -28,25 +26,35 @@ module.exports = {
     artifacts: './artifacts',
   },
   networks: {
-    somniaTestnet: {
-      url: 'https://dream-rpc.somnia.network',
-      chainId: 50312,
+    // Osaka (Hardhat's default) puts the P256VERIFY precompile at 0x0100,
+    // which is Somnia's Reactivity precompile address, so a mock installed
+    // there would never run. Prague has nothing at 0x0100.
+    hardhat: {
+      hardfork: 'prague',
+    },
+    // dreamDEX perps testnet, shown as Somnia Tokyo in the app.
+    hideki: {
+      url: 'https://api.hideki2.infra.testnet.somnia.network',
+      chainId: 50383,
       accounts,
     },
   },
   etherscan: {
     customChains: [
       {
-        network: 'somniaTestnet',
-        chainId: 50312,
+        network: 'hideki',
+        chainId: 50383,
         urls: {
-          apiURL: 'https://shannon-explorer.somnia.network/api',
-          browserURL: 'https://shannon-explorer.somnia.network',
+          apiURL: 'https://explorer.testnet.somnia.network/tokyo/api',
+          browserURL: 'https://explorer.testnet.somnia.network/tokyo',
         },
       },
     ],
     apiKey: {
-      somniaTestnet: 'dummy',
+      hideki: 'dummy',
     },
+  },
+  sourcify: {
+    enabled: false,
   },
 };

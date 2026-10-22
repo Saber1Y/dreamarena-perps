@@ -5,7 +5,7 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy": "hardhat run scripts/deploy.js --network somniaTestnet",
+    "deploy": "hardhat run scripts/deploy.js --network hideki",
     "verify": "hardhat verify"
   },
   "devDependencies": {
