@@ -1,0 +1,57 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# testing
+coverage/
+
+# next.js
+.next/
+out/
+
+# production
+build/
+dist/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+
+# hardhat
+cache/
+artifacts/
+typechain/
+typechain-types/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+
+.tmp
+# playwright-mcp session output
+.playwright-mcp/
+/docs
+.env.local
+.env*.local
+
+# MCP client config carries PRIVATE_KEY; commit .mcp.json.example instead
+.mcp.json

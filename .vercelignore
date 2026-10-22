@@ -1,0 +1,12 @@
+# Deploys run from the repo root so the frontend can reach mcp-server, which
+# its /api/oracle route imports. Vercel builds in frontend/ (the project's
+# Root Directory) and installs from source, so no build output or dependency
+# tree needs uploading.
+node_modules
+**/node_modules
+.next
+**/.next
+contracts/artifacts
+contracts/cache
+.playwright-mcp
+docs
