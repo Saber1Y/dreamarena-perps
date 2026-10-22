@@ -104,10 +104,24 @@ Scripts are in `scripts/` (`m0-markets.mjs`, `m0-event-rate.mjs`, `m0-first-orde
 - `tryGetPerpAccountEquity` leaves out margin locked by resting orders (`feedback/03`).
 - Transient failures seen: the SDK's WebSocket genesis check (twice) and one indexer `fetch failed`. Reads retry twice with backoff, and the market list falls back to its last copy.
 
+## M2 findings (Oct 22)
+
+- `PerpsArena` is deployed at [`0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17`](https://explorer.testnet.somnia.network/tokyo/address/0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17) and funded with 33 STT (`contracts/deployments/50383.json`). 27 contract tests pass.
+- Live proof on the deployed contract, with the linked bot starting runs for the Arena wallet (`scripts/m2-live-arena.mjs`):
+  - Streak: the open's callback landed in the order's own block (30550638, [`0x4450865c…`](https://explorer.testnet.somnia.network/tokyo/tx/0x4450865c111541cfcf3a9c68f73fd848d7c24284cb25b1fee6bfcfc087712ff6)); the close's callback, also same block (30550759, [`0x8e90da09…`](https://explorer.testnet.somnia.network/tokyo/tx/0x8e90da0985db9c977d068441325f8377b8e1a626ed52d91d1befeb8ddfd2d132)), emitted `TradeScored` +0.001992 USDso, a win.
+  - Survivor: the Schedule callback fired in the deadline's own second and settled the run as Won with no keeper ([`0xc6baa36c…`](https://explorer.testnet.somnia.network/tokyo/tx/0xc6baa36ce1f2c84fc92dce099f39a75cfa4253d3d27d2b4940f130d571e7cd6d)).
+  - Callback cost: 114k to 747k gas, 0.0007 to 0.0045 STT each, paid by the arena.
+- Two Reactivity behaviours found on Hideki, each fixed and covered by a test:
+  - **Gas.** A run's first callback measured 1.43M gas and a 1.5M limit ran out: the callback landed same-block but reverted ([`0x5a8aa661…`](https://explorer.testnet.somnia.network/tokyo/tx/0x5a8aa661dcc2dd3c8657570bc4a214136af74521961f6e61b6f63516ed766cff)). Storage writes cost far more than on Ethereum. The limit is now 10M, billed on use. dreamDEX's own handlers run at 50M to 100M.
+  - **Schedule timestamps.** A schedule requested for `1792704992000` ms arrived with topic `1792704992012`, the block's actual time. Matching the exact value missed it. Deadlines are now keyed by second, with a 10-second lookback for late delivery.
+- Starting a run is gas-heavy on Somnia: 2.36M for a player's first Survivor run, 544k once their slots exist. Clients send arena calls with a 10M ceiling, like perp orders; a wallet's default estimate may be too tight.
+- The Tokyo explorer ("somnia-explorer (blockscout-compatible)") exposes no contract verification API, so the source is not verified there. It is public in this repo, and the deployment record pins the compiler settings.
+- Two superseded arenas were retired with `scripts/retire.js` and their STT recovered: `0xdB1e…7C0D` (1.5M callback limit) and `0x6540…7F26` (exact-ms schedule match).
+
 ## Risks
 
-1. A callback into our own contract on Hideki is not yet observed. dreamDEX's own subscription there makes this low risk. Fallback: scoring through a permissionless `settle()`.
-2. A per-player subscription needs the arena contract to hold 32 STT, and each callback is paid from it. Cost per run must be measured in M2.
+1. Resolved in M2: callbacks into `PerpsArena` land in the same block as the order.
+2. The arena must stay above 32 STT to open subscriptions, and callbacks spend from it at 0.0007 to 0.0045 STT each. It holds about 1 STT of headroom, a few hundred callbacks. Top it up before a demo.
 3. Resolved in M1: `realizedPnl` is per change, so Streak sums it from open to flat.
 4. It is unconfirmed whether the SDK's `placePerpOrder` can act for a linked wallet, or whether the agent must call `placeOrderFor` on the pool directly.
 5. Paper USDso only opens positions in allowlisted markets, and an isolated account trades one market only.

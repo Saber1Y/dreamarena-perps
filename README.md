@@ -7,8 +7,46 @@ Built for the [dreamDEX Perps Builder Bounty](https://dorahacks.io/hackathon/dre
 
 > Work in progress.
 > See [PLAN.md](PLAN.md) for the architecture and milestones.
-> The perps agent (MCP server) trades for real on testnet.
-> The app and the arena contract are not built yet.
+> The perps agent (MCP server) trades for real on testnet, and the arena contract scores runs on-chain through Reactivity.
+> The app is not built yet.
+
+## The arena contract
+
+[`PerpsArena`](contracts/src/PerpsArena.sol) turns real dreamDEX perps trading into challenges, scored by the chain itself.
+It holds no trading funds and places no orders.
+When a run starts it subscribes, through Somnia Reactivity, to the player's own MarginBank events for that market, and the precompile calls the arena in the same block the position changes.
+No keeper, no backend.
+
+| Game | Rule |
+| --- | --- |
+| Survivor | Start with an open position and keep it open for 5 minutes to 24 hours. A liquidation or a full close loses. A scheduled callback at the deadline settles the win. |
+| Streak | Start flat. Every round trip that closes in profit adds a win; the first losing close or a liquidation ends the run. |
+| Boss | A Streak won outright at three profitable closes. |
+
+A player starts a run themselves, or their Link a Bot agent starts it for them; the pool's own `isOperatorAuthorized` check is the gate.
+
+Deployed on Hideki (chain 50383): [`0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17`](https://explorer.testnet.somnia.network/tokyo/address/0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17).
+
+Proven live on that address:
+
+| What | Transaction |
+| --- | --- |
+| Streak: the open's callback, same block as the order | [`0x4450865c…`](https://explorer.testnet.somnia.network/tokyo/tx/0x4450865c111541cfcf3a9c68f73fd848d7c24284cb25b1fee6bfcfc087712ff6) |
+| Streak: the close's callback scores a winning trade, same block | [`0x8e90da09…`](https://explorer.testnet.somnia.network/tokyo/tx/0x8e90da0985db9c977d068441325f8377b8e1a626ed52d91d1befeb8ddfd2d132) |
+| Survivor: the scheduled callback settles a win at the deadline | [`0xc6baa36c…`](https://explorer.testnet.somnia.network/tokyo/tx/0xc6baa36ce1f2c84fc92dce099f39a75cfa4253d3d27d2b4940f130d571e7cd6d) |
+
+Test and deploy:
+
+```bash
+cd contracts && npm install && npx hardhat test
+```
+
+```bash
+cd contracts && npm run deploy
+```
+
+Deploying needs `PRIVATE_KEY` in `contracts/.env` and about 34 STT on Hideki: the arena must hold 32 STT to own its subscriptions, and it pays for every callback.
+The source is not verified on the Tokyo explorer, which has no verification API; the deployment record in `contracts/deployments/50383.json` and the compiler settings in `hardhat.config.js` reproduce the bytecode.
 
 ## The perps agent
 
