@@ -89,11 +89,26 @@ Scripts are in `scripts/` (`m0-markets.mjs`, `m0-event-rate.mjs`, `m0-first-orde
   - The closing `PositionUpdated` has `newSize` 0 and `realizedPnl` -0.002987 USDso, the trade's result. Whether a partial close reports the chunk or the running total is still open.
 - Remaining M0 item: watch a Reactivity callback land in a contract of ours. That moves to the start of M2, where the arena contract gets deployed anyway.
 
+## M1 findings (Oct 22)
+
+- The perps MCP server is done: 9 tools, limits in `mcp-server/src/limits.ts` (9 unit tests), chain layer in `mcp-server/src/perps.ts`.
+- `scripts/check-mcp.mjs` passes 21 checks on the live testnet, including a real cycle on the linked Arena wallet that ends flat:
+  open [`0x3e23624f…592814`](https://explorer.testnet.somnia.network/tokyo/tx/0x3e23624f6a133294faf44c7bdc3f3ec52916767b0a369eba5df6cb278c592814),
+  half close [`0xc38082cf…68c2ec`](https://explorer.testnet.somnia.network/tokyo/tx/0xc38082cf9e9204d2335a811dab7d66c12bb4afcf530128606ff80222cc68c2ec),
+  close [`0xed8f0db7…34da579`](https://explorer.testnet.somnia.network/tokyo/tx/0xed8f0db78f4d2998f67d19539c1620f52bcef8f7f4736b2e53eddab7034da579),
+  post-only bid [`0x30bc354d…cbc337`](https://explorer.testnet.somnia.network/tokyo/tx/0x30bc354d30004252e3ad921ae1f0151947a9ec3e61487d24390244a5eacbc337),
+  cancel [`0x740e5ae3…b29ae3`](https://explorer.testnet.somnia.network/tokyo/tx/0x740e5ae3e498d44ee6e1242b4865ee0c45ad3b4523634cbfa53c16f803b29ae3).
+- `realizedPnl` on each `PositionUpdated` is the PnL of that change only, not a running total: two half closes reported (2374.51 - 2374.32) x 0.0042 and (2373.95 - 2374.32) x 0.0042 exactly. A trade's result is the sum from open to flat.
+- The indexer's `markPrice` on market rows lags the chain (about 20 USDso on ETH at one point), so orders are priced from the live book and `getPerpHealthSnapshot`.
+- `cancelOrderFor(address,uint128)` and `reduceOrderFor(address,uint128,uint256)` exist on the PerpPool implementation (`0x81f9…d443`), confirmed from its bytecode; the SDK ships no ABI for them.
+- `tryGetPerpAccountEquity` leaves out margin locked by resting orders (`feedback/03`).
+- Transient failures seen: the SDK's WebSocket genesis check (twice) and one indexer `fetch failed`. Reads retry twice with backoff, and the market list falls back to its last copy.
+
 ## Risks
 
 1. A callback into our own contract on Hideki is not yet observed. dreamDEX's own subscription there makes this low risk. Fallback: scoring through a permissionless `settle()`.
 2. A per-player subscription needs the arena contract to hold 32 STT, and each callback is paid from it. Cost per run must be measured in M2.
-3. On a full open-then-close, the closing event's `realizedPnl` is the trade's result, which is all Streak needs. Partial closes are still unverified, so Streak counts only full closes.
+3. Resolved in M1: `realizedPnl` is per change, so Streak sums it from open to flat.
 4. It is unconfirmed whether the SDK's `placePerpOrder` can act for a linked wallet, or whether the agent must call `placeOrderFor` on the pool directly.
 5. Paper USDso only opens positions in allowlisted markets, and an isolated account trades one market only.
 

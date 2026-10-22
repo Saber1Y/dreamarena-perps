@@ -7,8 +7,57 @@ Built for the [dreamDEX Perps Builder Bounty](https://dorahacks.io/hackathon/dre
 
 > Work in progress.
 > See [PLAN.md](PLAN.md) for the architecture and milestones.
-> So far only `scripts/` places real perps orders: a linked bot key opens and closes a position for a Perps Arena wallet ([open](https://explorer.testnet.somnia.network/tokyo/tx/0x14075187df1ea5632b6d8a0be0842bd2f18bb947976c122e180c86da54c788af), [close](https://explorer.testnet.somnia.network/tokyo/tx/0x061075c6b87335cff0ea81316e6a62ab595f7c371c9bd6a2e52804655ad04d0f)).
-> The app, agent and arena contract are not built yet.
+> The perps agent (MCP server) trades for real on testnet.
+> The app and the arena contract are not built yet.
+
+## The perps agent
+
+`mcp-server/` is an MCP server that lets an AI agent trade dreamDEX perps for a wallet that linked it with Link a Bot.
+The agent signs with its own key and can only place, cancel and reduce that wallet's orders; it can never withdraw.
+
+| Tool | What it does |
+| --- | --- |
+| `dreamarena_status` | Network, traded account, signer and limits |
+| `dreamarena_list_markets` | All 21 perp markets with max leverage, funding and open interest |
+| `dreamarena_get_market` | Live on-chain mark, spread and top of book |
+| `dreamarena_get_account` | Equity, leverage, positions with uPnL and liquidation price, open orders |
+| `dreamarena_preview_order` | Dry run: size, price, projected leverage and liquidation price, and whether the limits allow it |
+| `dreamarena_open_position` | Market order that opens or adds to a long or short |
+| `dreamarena_close_position` | Market order that closes some or all of a position |
+| `dreamarena_place_limit_order` | Resting limit or post-only order |
+| `dreamarena_cancel_order` | Cancel a resting order |
+
+Limits are enforced in the order path, not the prompt, and set by environment:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ALLOWED_MARKETS` | `BTC,ETH,SOL` | Markets the agent may open or add to |
+| `MAX_ORDER_USDSO` | `100` | Largest notional per order that adds exposure |
+| `MAX_LEVERAGE` | `5` | Largest account leverage after an order |
+| `MAX_LOSS_USDSO` | `100` | Equity drop from the baseline that switches the agent to reduce-only |
+
+Closing is always allowed, whatever the limits, because it is how the agent gets out of trouble.
+
+Run it:
+
+```bash
+cd mcp-server && npm install && npm run build
+```
+
+Copy `.mcp.json.example` to `.mcp.json`, set `PRIVATE_KEY` to the bot key and `OWNER_ADDRESS` to the linked wallet, and point your MCP client at it.
+
+Verify it:
+
+```bash
+cd mcp-server && npm test
+```
+
+```bash
+cd mcp-server && OWNER_ADDRESS=0x... node --env-file=../scripts/.env scripts/check-mcp.mjs
+```
+
+The second command checks reads and limit refusals against the live testnet without sending anything.
+Add `LIVE_TRADE=1` to also run a real cycle (open, half close, close, post-only bid, cancel) that ends flat.
 
 ## Layout
 
