@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useCallback, useState, ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Info, CheckCircle2, Zap, Trophy, Flame } from 'lucide-react';
+import { AlertTriangle, Info, CheckCircle2, Zap, Trophy } from 'lucide-react';
 
 export type ToastType = 'info' | 'success' | 'error' | 'reactive' | 'achievement';
 
@@ -35,7 +35,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (t: Omit<Toast, 'id'>) => {
       const id = `t${counter++}`;
       setToasts((prev) => [{ ...t, id }, ...prev].slice(0, 6));
-      const dur = t.type === 'achievement' ? 8000 : 5000;
+      const dur = t.type === 'achievement' || t.type === 'error' ? 9000 : 5000;
       setTimeout(() => dismiss(id), dur);
     },
     [dismiss],
@@ -45,7 +45,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={{ push, toasts }}>
       {children}
 
-      <div className="fixed bottom-20 right-4 z-[70] flex flex-col gap-3 w-[min(340px,calc(100vw-2rem))]">
+      <div className="fixed bottom-24 right-4 z-[var(--z-toast)] md:bottom-6 flex flex-col gap-3 w-[min(340px,calc(100vw-2rem))]">
         <AnimatePresence>
           {toasts.map((t) => (
             <motion.div
@@ -64,7 +64,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-bold">{t.title}</div>
-                  {t.detail && <div className="text-xs text-text-muted truncate mt-0.5">{t.detail}</div>}
+                  {t.detail && (
+                    <div className={`text-xs text-text-muted mt-0.5 ${t.type === 'error' ? 'line-clamp-4' : 'truncate'}`}>{t.detail}</div>
+                  )}
                   {t.href && (
                     <a
                       href={t.href}
@@ -97,19 +99,21 @@ function iconColor(t: ToastType) {
 }
 
 function iconWrap(t: ToastType) {
+  // Tint classes, not bg-x/10: Tailwind's opacity modifiers do not apply to var() colours.
+  const base = 'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0';
   switch (t) {
-    case 'success': return 'w-8 h-8 rounded-lg bg-success/10 flex items-center justify-center text-success flex-shrink-0';
-    case 'error': return 'w-8 h-8 rounded-lg bg-danger/10 flex items-center justify-center text-danger flex-shrink-0';
-    case 'reactive': return 'w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary flex-shrink-0';
-    case 'achievement': return 'w-8 h-8 rounded-lg bg-warning/10 flex items-center justify-center text-warning flex-shrink-0';
-    default: return 'w-8 h-8 rounded-lg bg-elevated flex items-center justify-center text-text-secondary flex-shrink-0';
+    case 'success': return `${base} tint-success text-success`;
+    case 'error': return `${base} tint-danger text-danger`;
+    case 'reactive': return `${base} tint-primary text-primary`;
+    case 'achievement': return `${base} tint-warning text-warning`;
+    default: return `${base} bg-elevated text-text-secondary`;
   }
 }
 
 function ToastIcon({ type }: { type: ToastType }) {
   switch (type) {
     case 'success': return <CheckCircle2 className="w-4 h-4" />;
-    case 'error': return <Flame className="w-4 h-4" />;
+    case 'error': return <AlertTriangle className="w-4 h-4" />;
     case 'reactive': return <Zap className="w-4 h-4" />;
     case 'achievement': return <Trophy className="w-4 h-4" />;
     default: return <Info className="w-4 h-4" />;

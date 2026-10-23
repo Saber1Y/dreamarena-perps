@@ -4,45 +4,71 @@
 
 :root {
   --font-sora: 'Sora', system-ui, sans-serif;
-  
-  /* Cream paper palette - light, sharp, no gradients */
+
+  /* Cream paper with one accent: Somnia purple. */
   --bg-primary: #faf8f4;
   --bg-surface: #ffffff;
   --bg-elevated: #f4f1eb;
   --bg-hover: #ece8e0;
-  
+
   --text-primary: #1f1b16;
   --text-secondary: #6d675d;
-  --text-muted: #9b9489;
-  
-  /* Somnia Official Brand Palette - two colors: brand purple + cream paper */
+  --text-muted: #8f887c;
+
   --accent-primary: #8e47ff;
-  --accent-primary-hover: #5c16cc;
-  --accent-success: #16a34a;
-  --accent-danger: #dc2626;
-  --accent-warning: #d97706;
-  
+  --accent-primary-hover: #6a24d9;
+  --accent-primary-soft: rgba(142, 71, 255, 0.09);
+  --accent-success: #15803d;
+  --accent-danger: #c2410c;
+  --accent-warning: #b45309;
+
   --border-subtle: rgba(31, 27, 22, 0.08);
   --border-default: rgba(31, 27, 22, 0.14);
+
+  /* Shadows carry the purple, from one light source above. */
+  --shadow-card: 0 1px 0 rgba(31, 27, 22, 0.03), 0 10px 28px -16px rgba(74, 32, 140, 0.22);
+  --shadow-lift: 0 1px 0 rgba(31, 27, 22, 0.04), 0 18px 40px -18px rgba(74, 32, 140, 0.32);
+
+  --z-nav: 30;
+  --z-popover: 50;
+  --z-toast: 70;
 }
 
 @layer base {
   * {
     @apply border-[var(--border-subtle)];
   }
-  
+
   html {
     scroll-behavior: smooth;
   }
-  
+
   body {
     @apply bg-[var(--bg-primary)] text-[var(--text-primary)];
     font-feature-settings: 'rlig' 1, 'calt' 1;
+    /* Faint paper grain so the cream does not read as a flat fill. */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   }
-  
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
   ::selection {
     background: rgba(142, 71, 255, 0.22);
     color: #1f1b16;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
 }
 
@@ -51,97 +77,167 @@
     @apply relative rounded-2xl;
     background: var(--bg-surface);
     border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-card);
   }
-  
+
+  .surface-flat {
+    @apply relative rounded-2xl;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+  }
+
   .surface-elevated {
     @apply relative rounded-2xl;
     background: var(--bg-elevated);
     border: 1px solid var(--border-default);
   }
-  
+
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white transition-all duration-200;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition-[background-color,transform,box-shadow] duration-200;
     background: var(--accent-primary);
+    box-shadow: 0 8px 20px -10px rgba(142, 71, 255, 0.7);
   }
-  
-  .btn-primary:hover {
+
+  .btn-primary:hover:not(:disabled) {
     background: var(--accent-primary-hover);
     transform: translateY(-1px);
   }
-  
-  .btn-primary:active {
-    transform: translateY(0);
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
   }
-  
+
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition-all duration-200;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-[background-color,transform] duration-200;
     background: var(--bg-elevated);
     border: 1px solid var(--border-default);
     color: var(--text-primary);
   }
-  
-  .btn-secondary:hover {
+
+  .btn-secondary:hover:not(:disabled) {
     background: var(--bg-hover);
-    border-color: var(--border-default);
   }
-  
+
+  .btn-secondary:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition-all duration-200;
-    background: transparent;
-    border: 1px solid var(--border-subtle);
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-200;
     color: var(--text-secondary);
   }
-  
-  .btn-ghost:hover {
-    background: var(--bg-surface);
+
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--bg-elevated);
     color: var(--text-primary);
   }
-  
+
+  .btn-primary:disabled,
+  .btn-secondary:disabled,
+  .btn-ghost:disabled {
+    @apply cursor-not-allowed opacity-50;
+    box-shadow: none;
+  }
+
   .input {
-    @apply w-full bg-elevated border border-border rounded-xl px-4 py-3 text-sm text-text-primary transition-colors;
-    @apply placeholder:text-text-muted focus:outline-none focus:border-primary;
+    @apply w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-sm text-text-primary transition-colors;
+    @apply placeholder:text-text-muted focus:border-primary focus:outline-none;
+  }
+
+  /* Labels above data: small, tracked, quiet. */
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted;
+  }
+
+  /* Every price, size and PnL. */
+  .num {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
   }
 
   .badge {
-    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold;
   }
-  
+
   .badge-primary {
     @apply badge;
-    background: rgba(142, 71, 255, 0.1);
+    background: var(--accent-primary-soft);
     color: var(--accent-primary-hover);
   }
-  
+
   .badge-success {
     @apply badge;
-    background: rgba(34, 197, 94, 0.1);
-    color: #22c55e;
+    background: rgba(21, 128, 61, 0.1);
+    color: var(--accent-success);
   }
-  
+
   .badge-danger {
     @apply badge;
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    background: rgba(194, 65, 12, 0.1);
+    color: var(--accent-danger);
+  }
+
+  .badge-muted {
+    @apply badge;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+  }
+
+  /* Tints. Tailwind's /opacity modifiers do not apply to var() colours. */
+  .tint-primary {
+    background: var(--accent-primary-soft);
+  }
+  .tint-success {
+    background: rgba(21, 128, 61, 0.07);
+    border-color: rgba(21, 128, 61, 0.22);
+  }
+  .tint-danger {
+    background: rgba(194, 65, 12, 0.07);
+    border-color: rgba(194, 65, 12, 0.24);
+  }
+  .tint-warning {
+    background: rgba(180, 83, 9, 0.07);
+    border-color: rgba(180, 83, 9, 0.28);
+  }
+
+  .skeleton {
+    @apply rounded-md;
+    background: linear-gradient(90deg, var(--bg-elevated) 0%, var(--bg-hover) 50%, var(--bg-elevated) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
   }
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-
-  /* Snappier beat for the arcade's live indicators - shorter period, harder edge */
   .pulse-fast {
     animation: pulse-fast 0.9s ease-in-out infinite;
   }
   @keyframes pulse-fast {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.25; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
+  }
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .pulse-fast {
+    .pulse-fast,
+    .skeleton {
       animation: none;
+    }
+    html {
+      scroll-behavior: auto;
     }
   }
 }

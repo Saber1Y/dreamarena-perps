@@ -1,1007 +1,242 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import Link from "next/link";
-import {
-  ArrowRight,
-  Shield,
-  TrendingUp,
-  TrendingDown,
-  Github,
-  ExternalLink,
-  CheckCircle2,
-  Flame,
-  Repeat,
-  Users,
-  BadgeCheck,
-  Zap,
-  Gamepad2,
-  Bot,
-  Trophy,
-  User,
-  Clock,
-} from "lucide-react";
-import { LogoText } from "@/components/Logo";
-import { marketLabel, formatCountdown } from "@/components/MarketRow";
-import ArchitectureCanvas from "@/components/ArchitectureCanvas";
-import { useMarkets, useCountdown } from "@/hooks/useDreamDEX";
-import { CONTRACTS } from "@/lib/web3";
-import { useLeaderboard } from "@/hooks/useContracts";
+import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { ArrowRight, Bot, Flame, Github, ShieldCheck, Swords, Timer, Zap } from 'lucide-react';
+import { LogoText } from '@/components/Logo';
+import { FeedRow } from '@/components/FeedRow';
+import { RollingNumber } from '@/components/RollingNumber';
+import { useArena, useFeed } from '@/hooks/api';
+import { useNow } from '@/hooks/useNow';
+import { addrUrl, shortAddr, usd } from '@/lib/format';
+
+const REPO = 'https://github.com/Saber1Y/dreamarena-perps';
+
+const rise = {
+  initial: { opacity: 0, y: 14 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: '-60px' },
+  transition: { type: 'spring' as const, stiffness: 260, damping: 30 },
+};
+
+function LiveCard() {
+  const arena = useArena();
+  const feed = useFeed();
+  const now = useNow();
+  const a = arena.data?.arena;
+  const recent = (feed.data?.events ?? []).slice(0, 3);
+
+  return (
+    <div className="surface overflow-hidden">
+      <div className="flex items-center justify-between border-b border-border px-5 py-3">
+        <span className="flex items-center gap-2 text-xs font-semibold">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+          </span>
+          Live arena
+        </span>
+        {a && (
+          <a href={addrUrl(a.address)} target="_blank" rel="noopener noreferrer" className="num text-[11px] text-text-muted hover:text-primary">
+            {shortAddr(a.address)}
+          </a>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-3 px-5 py-4">
+        <div>
+          <p className="eyebrow">Callbacks</p>
+          <p className="num text-2xl font-semibold">{a ? <RollingNumber value={a.callbacks} decimals={0} /> : '–'}</p>
+        </div>
+        <div>
+          <p className="eyebrow">Players</p>
+          <p className="num text-2xl font-semibold">{a ? a.playerCount : '–'}</p>
+        </div>
+        <div>
+          <p className="eyebrow">In a run</p>
+          <p className="num text-2xl font-semibold">{a ? a.activeRuns : '–'}</p>
+        </div>
+      </div>
+      <div className="border-t border-border px-5">
+        {feed.isLoading && <div className="skeleton my-4 h-16 w-full" />}
+        {feed.data && recent.length === 0 && (
+          <p className="py-4 text-xs text-text-muted">No callbacks in the last hour. The next run that trades will show up here.</p>
+        )}
+        <ul className="divide-y divide-[var(--border-subtle)]">
+          {recent.map((e) => (
+            <FeedRow key={e.id} e={e} now={now} />
+          ))}
+        </ul>
+      </div>
+      {a && (
+        <p className="num border-t border-border bg-elevated px-5 py-2 text-[11px] text-text-muted">
+          Somnia Tokyo testnet · head {a.head.toLocaleString('en-US')} · Reactivity balance {usd(a.balanceStt, 2)} STT
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function LandingPage() {
   return (
-    <main className="min-h-[100dvh] bg-background text-text-primary overflow-x-hidden">
-      <LandingNav />
-      <Hero />
-      <ArenaModules />
-      <Architecture />
-      <Capabilities />
-      <HowItWorks />
-      <LeaderboardPreview />
-      <StatsStrip />
-      <ProofSection />
-      <Transparency />
-      <Footer />
-    </main>
-  );
-}
-
-/* 1. Nav */
-function LandingNav() {
-  return (
-    <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50">
-      <motion.nav
-        initial={{ y: -12, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      >
-        <div className="flex items-center rounded-full border border-border bg-white/90 backdrop-blur-xl pl-4 sm:pl-5 pr-2 sm:pr-3 py-2.5 shadow-[0_8px_30px_rgba(31,27,22,0.08)] w-[min(920px,calc(100vw-1rem))]">
-          {/* Left: logo */}
-          <a href="#" className="flex items-center shrink-0">
-            <LogoText />
+    <div className="min-h-[100dvh]">
+      <header className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-4 lg:px-6">
+        <LogoText />
+        <nav className="flex items-center gap-2">
+          <a href={REPO} target="_blank" rel="noopener noreferrer" className="btn-ghost hidden sm:inline-flex">
+            <Github className="h-4 w-4" /> Source
           </a>
-
-          {/* Center: links - flex-1 centers them between logo and actions */}
-          <div className="hidden md:flex items-center justify-center flex-1 mx-1 min-w-0">
-            <NavLink href="#how-it-works" label="How it works" />
-            <NavLink href="#architecture" label="Architecture" />
-            <NavLink href="#proof" label="Proof" />
-            <NavLink href="/app?tab=leaderboard" label="Leaderboard" />
-          </div>
-
-          {/* Right: actions */}
-          <button className="hidden lg:inline-flex items-center gap-1.5 text-sm font-medium text-text-secondary hover:text-primary transition-colors px-3 py-1.5 rounded-full shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-success pulse-fast" />
-            Testnet
-          </button>
-          <Link
-            href="/app"
-            className="btn-primary !rounded-full !px-4 !py-2 whitespace-nowrap shrink-0"
-          >
-            Launch App
-            <ArrowRight className="w-4 h-4" />
+          <Link href="/app" className="btn-primary">
+            Open the arena <ArrowRight className="h-4 w-4" />
           </Link>
-        </div>
-      </motion.nav>
-    </div>
-  );
-}
+        </nav>
+      </header>
 
-function NavLink({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="px-2.5 sm:px-3 py-1.5 rounded-full text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-elevated transition-all whitespace-nowrap"
-    >
-      {label}
-    </Link>
-  );
-}
-
-/* 2. Hero - the live bet card is the hero, not an accessory */
-function Hero() {
-  return (
-    <section className="relative min-h-[100dvh] flex items-center overflow-hidden pt-24 pb-16">
-      {/* Subtle ambient wash - sharp cream, barely-there purple hint */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 overflow-hidden"
-      >
-        <div className="absolute -top-48 -right-40 w-[32rem] h-[32rem] rounded-full bg-primary/5 blur-[100px]" />
-      </div>
-
-      <div className="relative w-full max-w-[1200px] mx-auto px-6 lg:px-12">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(0,440px)] gap-12 lg:gap-20 items-center">
-          {/* Copy column - tighter, punchier for a game */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <h1 className="text-5xl sm:text-6xl xl:text-7xl font-bold tracking-tight leading-[1.04] mb-6">
-              The prediction
-              <br />
-              arcade.
-              <br />
-              Five arenas. One chain.
+      <main id="main">
+        {/* Hero */}
+        <section className="mx-auto grid max-w-[1200px] items-center gap-10 px-4 pb-20 pt-10 lg:grid-cols-[1.15fr_1fr] lg:px-6 lg:pt-16">
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 220, damping: 28 }}>
+            <span className="badge-primary">dreamDEX perps · Somnia Reactivity</span>
+            <h1 className="mt-5 text-[2.6rem] font-bold leading-[1.02] tracking-[-0.035em] sm:text-6xl">
+              Leverage challenges the chain referees.
             </h1>
-
-            <p className="text-lg text-text-secondary leading-relaxed mb-8 max-w-md">
-              Play markets, run a community DAO, ask the Oracle, race the
-              leaderboard, and own your player card. Every move is a DreamDEX
-              Event Contract that settles in the same block via Somnia
-              Reactivity.
+            <p className="mt-5 max-w-[52ch] text-base text-text-secondary sm:text-lg">
+              Trade real dreamDEX perps and take on Survivor, Streak and Boss runs. The arena contract subscribes to your own position events, and Somnia calls it in the block your position changes. No keeper, no backend, no score anyone can fake.
             </p>
-
-            <div className="flex flex-wrap items-center gap-4">
-              <Link href="/app" className="btn-primary text-base !px-6 !py-3.5">
-                Enter the arena
-                <ArrowRight className="w-5 h-5" />
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link href="/app" className="btn-primary px-6 py-3">
+                Start a run <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link
-                href="/app?tab=leaderboard"
-                className="btn-ghost text-base !px-6 !py-3.5"
-              >
-                See the streak leaders
+              <Link href="/app?tab=monitor" className="btn-secondary px-6 py-3">
+                Watch callbacks land
               </Link>
             </div>
           </motion.div>
-
-          {/* LIVE BET card - the hero */}
-          <LiveBetCard />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* A real on-chain live bet - shows genuine market + price data from the deployed contracts */
-function LiveBetCard() {
-  const { markets, loading } = useMarkets();
-  const market = markets[0];
-  const secondsLeft = useCountdown(market?.expiry);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
-    >
-      <div className="surface p-6 sm:p-7 relative overflow-hidden">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-danger pulse-fast" />
-            <span className="font-mono text-[11px] uppercase tracking-wider text-text-muted">
-              Live
-            </span>
-          </div>
-          {market && (
-            <span className="font-mono text-[11px] text-text-muted">
-              {market.marketId.slice(-6)}
-            </span>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="text-center py-16 text-text-muted">
-            Reading on-chain markets...
-          </div>
-        ) : market ? (
-          <>
-            <div className="flex items-end justify-between mb-6 gap-4">
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-text-muted mb-1">
-                  {market.asset}
-                </div>
-                <div className="text-2xl sm:text-3xl font-bold leading-tight">
-                  {marketLabel(market)}
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-1 shrink-0">
-                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold text-primary bg-primary/10 tabular-nums">
-                  <Clock className="w-4 h-4" />
-                  {formatCountdown(secondsLeft)}
-                </span>
-                <span className="font-mono text-[11px] text-text-muted">
-                  {market.intervalSec}s series
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-5">
-              <Link
-                href="/app"
-                className="py-4 rounded-xl border-2 border-primary/40 bg-primary/10 text-primary font-bold text-lg text-center transition-transform hover:scale-[1.02] active:scale-95"
-              >
-                UP
-              </Link>
-              <Link
-                href="/app"
-                className="py-4 rounded-xl border-2 border-danger/40 bg-danger/10 text-danger font-bold text-lg text-center transition-transform hover:scale-[1.02] active:scale-95"
-              >
-                DOWN
-              </Link>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-text-muted">
-              <Shield className="w-4 h-4" />
-              Live market on Somnia Shannon - bet resolves via the reactivity
-              precompile at 0x0100.
-            </div>
-          </>
-        ) : (
-          <div className="text-center py-16">
-            <div className="text-3xl mb-3 text-text-muted">◌</div>
-            <h3 className="font-bold mb-2">Between rounds</h3>
-            <p className="text-sm text-text-muted mb-6">
-              No market is open for trading this second. The series roll every
-              minute — the next one opens shortly.
-            </p>
-            <Link
-              href="/app"
-              className="btn-primary inline-flex items-center gap-2"
-            >
-              Open the arena <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-/* 2.5. Arena modules - the five rooms, honest and real */
-function ArenaModules() {
-  const modules = [
-    {
-      icon: Gamepad2,
-      title: "Arcade",
-      desc: "Higher or Lower, Streak Survivor, and Boss Battle. Pick a real market, call Up or Down, and let it settle in the same block.",
-      tag: "3 game modes",
-    },
-    {
-      icon: Users,
-      title: "Community DAO",
-      desc: "Deploy a branded arena with its own treasury and builder fee. Every bet routed through it pays that treasury, on-chain.",
-      tag: "builder fees",
-    },
-    {
-      icon: Bot,
-      title: "AI Oracle",
-      desc: "Ask for live markets, odds, risk, or your streak in plain language. An MCP server exposes the same tools to any AI agent.",
-      tag: "MCP server",
-    },
-    {
-      icon: Trophy,
-      title: "Leaderboard",
-      desc: "Streaks, wins, accuracy and bosses slain, each read per-player from ArcadeEngine. No fabricated rows.",
-      tag: "live standings",
-    },
-    {
-      icon: User,
-      title: "Profile",
-      desc: "Your player card: tUSDC, win rate, achievements - all unlocked from real contract state, not mock numbers.",
-      tag: "on-chain stats",
-    },
-  ];
-
-  return (
-    <section className="py-32 px-6 lg:px-12 border-t border-border">
-      <div className="max-w-[1200px] mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="mb-16"
-        >
-          <h2 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-            Five arenas, one player
-          </h2>
-          <p className="text-lg text-text-secondary max-w-md">
-            DeFi primitives hidden behind game mechanics - every surface reads
-            real on-chain state, nothing fabricated.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-          {modules.map((mod, i) => (
-            <motion.div
-              key={mod.title}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.06 }}
-              className="surface p-6 flex flex-col hover:border-border-default transition-all duration-300"
-            >
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-5">
-                <mod.icon className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold mb-2">{mod.title}</h3>
-              <p className="text-sm text-text-secondary leading-relaxed mb-5 flex-1">
-                {mod.desc}
-              </p>
-              <div className="font-mono text-[11px] text-text-muted bg-elevated border border-border rounded-lg px-3 py-1.5 inline-block self-start">
-                {mod.tag}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* 3. Capabilities */
-function Capabilities() {
-  const caps = [
-    {
-      icon: Zap,
-      num: "01",
-      benefit: "Instantly resolved bets",
-      desc: "The oracle answer dispatches into our contract in the same block - no keeper, no bot, no cron. Anything the callback cannot reach in one block is swept by a permissionless settle that anyone can call.",
-      badge: "Somnia Reactivity · 0x0100",
-    },
-    {
-      icon: Repeat,
-      num: "02",
-      benefit: "Streaks and boss runs",
-      desc: "Chain wins across back-to-back markets, or take on a 3-round Boss Battle. Every round is a real position, so a streak cannot be faked.",
-      badge: "ArcadeEngine · on-chain logic",
-    },
-    {
-      icon: Users,
-      num: "03",
-      benefit: "Community arenas",
-      desc: "Deploy an arena with its own treasury and builder fee. DreamDEX pays it a real cut of every order routed through it.",
-      badge: "CommunityDAOFactory · builder fees",
-    },
-  ];
-
-  return (
-    <section className="py-32 px-6 lg:px-12 border-t border-border">
-      <div className="max-w-[1200px] mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="mb-16"
-        >
-          <h2 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-            What DreamArena does
-          </h2>
-          <p className="text-lg text-text-secondary max-w-md">
-            The mechanism, not the marketing - what&apos;s actually happening
-            on-chain.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {caps.map((cap, i) => (
-            <motion.div
-              key={cap.num}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.08 }}
-              className="surface p-8 hover:border-border-default transition-all duration-300"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <span className="text-5xl font-bold text-text-muted/20">
-                  {cap.num}
-                </span>
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                  <cap.icon className="w-6 h-6" />
-                </div>
-              </div>
-              <h3 className="text-xl font-bold mb-3">{cap.benefit}</h3>
-              <p className="text-text-secondary leading-relaxed mb-6">
-                {cap.desc}
-              </p>
-              <div className="font-mono text-xs text-text-muted bg-elevated border border-border rounded-lg px-3 py-2 inline-block">
-                {cap.badge}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* 4. How it works - 4 steps */
-function HowItWorks() {
-  const steps = [
-    {
-      num: "01",
-      title: "Connect",
-      desc: "Link your wallet to Somnia testnet. No KYC, no signup.",
-    },
-    {
-      num: "02",
-      title: "Predict",
-      desc: "Pick a market, choose Up or Down, stake in tUSDC.",
-    },
-    {
-      num: "03",
-      title: "Win",
-      desc: "Settled in the same block via Somnia Reactivity.",
-    },
-    {
-      num: "04",
-      title: "Compound",
-      desc: "Roll winnings forward and build your streak multiplier.",
-    },
-  ];
-
-  return (
-    <section id="how-it-works" className="py-32 px-6 lg:px-12">
-      <div className="max-w-[1200px] mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="mb-16"
-        >
-          <h2 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-            How it works
-          </h2>
-          <p className="text-lg text-text-secondary max-w-md">
-            Four steps. No keepers. No delays. Skimmable in fifteen seconds.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {steps.map((step, i) => (
-            <motion.div
-              key={step.num}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.08 }}
-              className="relative"
-            >
-              <div className="surface p-6 h-full">
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="font-mono text-sm text-primary">
-                    {step.num}
-                  </span>
-                  {i < steps.length - 1 && (
-                    <ArrowRight className="w-4 h-4 text-text-muted" />
-                  )}
-                </div>
-                <h3 className="text-lg font-bold mb-2">{step.title}</h3>
-                <p className="text-sm text-text-secondary leading-relaxed">
-                  {step.desc}
-                </p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* 4.5. Live leaderboard preview - streaks & competition, real on-chain standings */
-function LeaderboardPreview() {
-  const { rows: allRows, isLoading } = useLeaderboard();
-  const rows = allRows.slice(0, 5);
-
-  return (
-    <section
-      id="leaderboard"
-      className="py-32 px-6 lg:px-12 border-t border-border"
-    >
-      <div className="max-w-[1200px] mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="flex flex-wrap items-end justify-between gap-6 mb-12"
-        >
-          <div>
-            <div className="font-mono text-[11px] uppercase tracking-widest text-text-muted mb-3">
-              Streaks · live
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
-              Who&apos;s on a <span className="text-primary">tear</span> right
-              now
-            </h2>
-          </div>
-          <Link
-            href="/app?tab=leaderboard"
-            className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
-          >
-            Full leaderboard
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        </motion.div>
-
-        <div className="surface p-2 sm:p-3">
-          <div className="grid grid-cols-[44px_1fr_auto] sm:grid-cols-[48px_1fr_1fr_auto] gap-3 px-4 py-3 font-mono text-[11px] uppercase tracking-wider text-text-muted border-b border-border">
-            <span>#</span>
-            <span>Player</span>
-            <span className="hidden sm:block">Streak</span>
-            <span className="hidden sm:w-20"></span>
-          </div>
-
-          {isLoading ? (
-            <div className="text-center py-10 text-text-muted">
-              Reading on-chain...
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="text-center py-10 text-text-muted">
-              No players on the ladder yet - the first streak to survive is
-              yours.
-            </div>
-          ) : (
-            rows.map((row, i) => (
-              <motion.div
-                key={row.player}
-                initial={{ opacity: 0, x: -12 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true, margin: "-40px" }}
-                transition={{
-                  duration: 0.4,
-                  delay: i * 0.06,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
-                className="grid grid-cols-[44px_1fr_auto] sm:grid-cols-[48px_1fr_1fr_auto] items-center gap-3 px-4 py-3.5 border-b border-border last:border-0"
-              >
-                <span
-                  className={`font-mono text-sm font-bold ${i === 0 ? "text-primary" : "text-text-secondary"}`}
-                >
-                  {i + 1}
-                </span>
-                <span className="font-mono text-sm text-text-primary truncate">
-                  {row.player.slice(0, 6)}…{row.player.slice(-4)}
-                </span>
-                <span className="hidden sm:flex items-center gap-1.5 font-bold text-text-primary">
-                  <Flame className="w-3.5 h-3.5 text-primary" />
-                  {row.streak} in a row
-                </span>
-                <span className="hidden sm:w-20"></span>
-              </motion.div>
-            ))
-          )}
-        </div>
-
-        <p className="flex items-center gap-2 font-mono text-[11px] text-text-muted mt-4">
-          <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-          Read from ArcadeEngine, which the oracle&apos;s own resolution updates
-          in-block.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-/* 5. Architecture diagram - workflow-canvas style */
-function Architecture() {
-  return (
-    <section
-      id="architecture"
-      className="py-32 px-6 lg:px-12 border-t border-border"
-    >
-      <div className="max-w-[1260px] mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="mb-16"
-        >
-          <h2 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-            The mechanism, on the canvas
-          </h2>
-          <p className="text-lg text-text-secondary max-w-lg">
-            Every node runs on-chain. No node is a keeper, an agent, or a human.
-            Bet to payout to roll-forward - one conditional fork, then the loop
-            curls back and your streak compounds into the next round.
-          </p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6, delay: 0.15 }}
-          className="relative rounded-2xl border border-border bg-elevated p-4 sm:p-6 md:p-10"
-        >
-          <ArchitectureCanvas />
-        </motion.div>
-
-        {/* Legend */}
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs text-text-muted">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-success animate-pulse" />{" "}
-            Nodes are contracts, all operational
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-6 border-t-2 border-primary" />{" "}
-            Purple loop = streak compounds back into the next bet
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-6 border-t-2 border-dashed border-text-muted" />{" "}
-            Dashed line = same-block flow
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* 6. Stats strip - guarantees, not vanity */
-function StatsStrip() {
-  const stats = [
-    { value: "1", unit: "", label: "login to start playing, no KYC" },
-    { value: "Same-block", unit: "", label: "settlement, with zero keepers" },
-    { value: "3", unit: "", label: "contracts, one repo, fully verified" },
-    { value: "$0", unit: "", label: "exposed on-chain beyond your stake" },
-  ];
-
-  return (
-    <section className="py-32 px-6 lg:px-12 border-t border-border">
-      <div className="max-w-[1200px] mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12"
-        >
-          {stats.map((stat) => (
-            <div key={stat.label}>
-              <div className="text-4xl sm:text-5xl font-bold mb-2">
-                {stat.value}
-                {stat.unit && (
-                  <span className="text-lg text-text-muted ml-1">
-                    {stat.unit}
-                  </span>
-                )}
-              </div>
-              <div className="text-sm font-medium uppercase tracking-wider text-text-muted">
-                {stat.label}
-              </div>
-            </div>
-          ))}
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
-/* 7. Proof / trust - with honest disclaimer */
-function ProofSection() {
-  return (
-    <section id="proof" className="py-32 px-6 lg:px-12 border-t border-border">
-      <div className="max-w-[1200px] mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="mb-16"
-        >
-          <h2 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-            Verified, not assumed
-          </h2>
-          <p className="text-lg text-text-secondary max-w-lg">
-            See exactly where each bet settles. No hidden engine, no black box.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Settlement proof panel */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            className="surface p-8"
-          >
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center text-success">
-                <BadgeCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold">A bet, end to end</h3>
-                <p className="text-xs text-text-muted">
-                  Illustrative settlement trace
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3 font-mono text-xs">
-              <TraceLine
-                label="Approve tUSDC to ArcadeEngine"
-                value="1 signature"
-              />
-              <TraceLine
-                label="openGame: stake pulled, session opened"
-                value="ArcadeEngine"
-              />
-              <TraceLine
-                label="Price update arrives via reactive precompile 0x0100"
-                value="same block"
-                tint="text-warning"
-              />
-              <TraceLine
-                label="Direction resolved against strike, streak updated"
-                value="settled"
-                tint="text-success"
-              />
-            </div>
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 200, damping: 28, delay: 0.08 }}>
+            <LiveCard />
           </motion.div>
+        </section>
 
-          {/* Chain of trust */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="surface p-8"
-          >
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                <Shield className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold">On-chain trust anchors</h3>
-                <p className="text-xs text-text-muted">
-                  Every contract is public and verified
-                </p>
-              </div>
+        {/* Games */}
+        <section className="border-y border-border bg-surface">
+          <div className="mx-auto max-w-[1200px] px-4 py-20 lg:px-6">
+            <motion.div {...rise} className="max-w-[56ch]">
+              <p className="eyebrow">Three runs</p>
+              <h2 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Pick a fight with the market.</h2>
+            </motion.div>
+            <div className="mt-10 grid gap-4 lg:grid-cols-[1.25fr_1fr] lg:grid-rows-2">
+              <motion.article {...rise} className="surface-elevated flex flex-col justify-between p-7 lg:row-span-2">
+                <div>
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-white">
+                    <Timer className="h-5 w-5" />
+                  </span>
+                  <h3 className="mt-5 text-2xl font-bold">Survivor</h3>
+                  <p className="mt-2 max-w-[44ch] text-text-secondary">
+                    Open a position, start the clock, and keep it alive for 5 minutes, 15 minutes or an hour. A liquidation or a full close loses.
+                  </p>
+                </div>
+                <div className="mt-8 rounded-xl bg-surface p-4">
+                  <p className="eyebrow">Who ends the run</p>
+                  <p className="mt-1 text-sm text-text-secondary">
+                    A scheduled Reactivity callback, set when the run starts, fires at the deadline second and checks your position on-chain.
+                  </p>
+                </div>
+              </motion.article>
+              <motion.article {...rise} className="surface-elevated p-7">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-text-primary text-background">
+                    <Flame className="h-5 w-5" />
+                  </span>
+                  <h3 className="text-xl font-bold">Streak</h3>
+                </div>
+                <p className="mt-3 text-text-secondary">Close in profit, again and again. The first losing close ends the run and your best streak goes on the board.</p>
+              </motion.article>
+              <motion.article {...rise} className="surface-elevated p-7">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-danger text-white">
+                    <Swords className="h-5 w-5" />
+                  </span>
+                  <h3 className="text-xl font-bold">Boss</h3>
+                </div>
+                <p className="mt-3 text-text-secondary">Three profitable closes in a row beat the boss. One losing close and the boss wins.</p>
+              </motion.article>
             </div>
+          </div>
+        </section>
 
-            <div className="space-y-3">
+        {/* How it is scored */}
+        <section className="mx-auto max-w-[1200px] px-4 py-20 lg:px-6">
+          <div className="grid gap-12 lg:grid-cols-[1fr_1.3fr]">
+            <motion.div {...rise}>
+              <p className="eyebrow">How a score lands</p>
+              <h2 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">The trade and the score share a block.</h2>
+              <p className="mt-4 max-w-[48ch] text-text-secondary">
+                Every run opens its own subscriptions, filtered to one player and one market, so the arena pays only for players in a run, not for the thousands of position changes MarginBank emits each hour.
+              </p>
+            </motion.div>
+            <ol className="space-y-4">
               {[
-                { name: "ArcadeEngine", addr: CONTRACTS.arcadeEngine },
-                { name: "CommunityDAOFactory", addr: CONTRACTS.daoFactory },
-                { name: "OracleHub (protocol)", addr: CONTRACTS.oracleHub },
-              ]
-                .filter((c) => c.addr)
-                .map((c) => (
-                  <a
-                    key={c.name}
-                    href={`https://shannon-explorer.somnia.network/address/${c.addr}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between bg-elevated rounded-xl px-4 py-3 hover:bg-surface transition-colors"
-                  >
-                    <span className="text-sm font-medium">{c.name}</span>
-                    <span className="font-mono text-xs text-text-muted">
-                      {c.addr.slice(0, 8)}…{c.addr.slice(-6)}
-                    </span>
-                  </a>
-                ))}
-            </div>
-          </motion.div>
+                { icon: Zap, title: 'You trade', body: 'A real order fills on the dreamDEX perp pool. MarginBank emits PositionUpdated for your account.' },
+                { icon: ShieldCheck, title: 'The chain calls the arena', body: 'Somnia’s Reactivity precompile matches your subscription and calls PerpsArena in that same block.' },
+                { icon: Flame, title: 'The run moves', body: 'The arena sums the realized PnL from open to flat, scores the close, and updates your streak, boss or survival on-chain.' },
+              ].map(({ icon: Icon, title, body }, i) => (
+                <motion.li key={title} {...rise} transition={{ ...rise.transition, delay: i * 0.06 }} className="surface flex gap-4 p-5">
+                  <span className="num flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-elevated text-sm font-semibold text-primary">{i + 1}</span>
+                  <div>
+                    <h3 className="flex items-center gap-2 font-semibold">
+                      <Icon className="h-4 w-4 text-primary" /> {title}
+                    </h3>
+                    <p className="mt-1 text-sm text-text-secondary">{body}</p>
+                  </div>
+                </motion.li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        {/* The agent */}
+        <section className="border-t border-border bg-surface">
+          <div className="mx-auto grid max-w-[1200px] items-center gap-10 px-4 py-20 lg:grid-cols-[1fr_1fr] lg:px-6">
+            <motion.div {...rise}>
+              <p className="eyebrow">The agent</p>
+              <h2 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">An AI that trades your wallet and cannot withdraw from it.</h2>
+              <p className="mt-4 max-w-[50ch] text-text-secondary">
+                The perps agent is an MCP server. Link its key to your Perps Arena wallet with dreamDEX Link a Bot and it can place, cancel and reduce orders for you. Its limits run in code: allowed markets, order size, leverage, and reduce-only after a set loss.
+              </p>
+              <Link href="/app?tab=agent" className="btn-secondary mt-6">
+                <Bot className="h-4 w-4" /> See the agent&apos;s tools
+              </Link>
+            </motion.div>
+            <motion.figure {...rise}>
+            <pre className="num overflow-x-auto rounded-2xl bg-text-primary p-6 text-[12px] leading-relaxed text-background">
+{`> dreamarena_preview_order ETH long 25
+  quantity      0.0105 ETH
+  leverage      0.03x after fill
+  allowed       true
+
+> dreamarena_open_position ETH long 25
+  filled        0.0105 ETH
+  position      long 0.0105
+
+> dreamarena_open_position DOGE long 25
+  refused       DOGE is not in this agent's
+                allowed markets (BTC, ETH, SOL)`}
+            </pre>
+            <figcaption className="mt-2 text-xs text-text-muted">
+              An example session, abridged. Run the real tools in the app&apos;s Agent tab.
+            </figcaption>
+            </motion.figure>
+          </div>
+        </section>
+      </main>
+
+      <footer className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-4 px-4 py-10 text-xs text-text-muted lg:px-6">
+        <p>Built for the dreamDEX Perps Builder Bounty. Testnet only: paper USDso, no real funds.</p>
+        <div className="flex gap-4">
+          <a href={REPO} target="_blank" rel="noopener noreferrer" className="hover:text-text-primary">Source</a>
+          <Link href="/app?tab=leaderboard" className="hover:text-text-primary">Leaderboard</Link>
+          <Link href="/app?tab=monitor" className="hover:text-text-primary">Monitor</Link>
         </div>
-
-        {/* Honest disclaimer */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="mt-8 inline-flex items-center gap-3 px-5 py-3 rounded-xl border border-warning/20 bg-warning/5 text-warning"
-        >
-          <Shield className="w-4 h-4 flex-shrink-0" />
-          <span className="text-sm">
-            Hackathon build on the Somnia Shannon testnet - all balances are
-            testnet tUSDC, not real funds.
-          </span>
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
-function TraceLine({
-  label,
-  value,
-  tint = "text-text-muted",
-}: {
-  label: string;
-  value: string;
-  tint?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 bg-elevated border border-border rounded-xl px-4 py-3">
-      <span className="text-text-secondary">{label}</span>
-      <span className={`font-bold ${tint}`}>{value}</span>
+      </footer>
     </div>
-  );
-}
-
-/* 8. Transparency - real links */
-function Transparency() {
-  const links = [
-    {
-      icon: Github,
-      title: "Source code",
-      desc: "The entire repo, open from day one.",
-      href: "https://github.com/Saber1Y/DreamBuild",
-      external: true,
-    },
-    {
-      icon: ExternalLink,
-      title: "Somnia explorer",
-      desc: "Browse live transactions on the testnet.",
-      href: "https://shannon-explorer.somnia.network",
-      external: true,
-    },
-    {
-      icon: BadgeCheck,
-      title: "ArcadeEngine contract",
-      desc: "The core arcade, verified on-chain.",
-      href: `https://shannon-explorer.somnia.network/address/${CONTRACTS.arcadeEngine}`,
-      external: true,
-    },
-  ];
-
-  return (
-    <section className="py-32 px-6 lg:px-12 border-t border-border">
-      <div className="max-w-[1200px] mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="mb-16"
-        >
-          <h2 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-            Verify it yourself
-          </h2>
-          <p className="text-lg text-text-secondary max-w-md">
-            Don&apos;t take our word for it - open it up.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {links.map((link, i) => (
-            <motion.a
-              key={link.title}
-              href={link.href}
-              target={link.external ? "_blank" : undefined}
-              rel={link.external ? "noopener noreferrer" : undefined}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.08 }}
-              className="surface p-8 group hover:border-border-default transition-all duration-300 flex flex-col"
-            >
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-6 group-hover:bg-primary/20 transition-all">
-                <link.icon className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
-                {link.title}
-                <ExternalLink className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
-              </h3>
-              <p className="text-text-secondary leading-relaxed">{link.desc}</p>
-            </motion.a>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* 9. Footer */
-function Footer() {
-  return (
-    <footer className="border-t border-border">
-      <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-16">
-        <div className="grid grid-cols-1 gap-12 md:grid-cols-[1.4fr_1fr_1fr_1.2fr]">
-          {/* Brand */}
-          <div className="flex flex-col gap-4">
-            <LogoText />
-            <p className="text-sm text-text-muted leading-relaxed max-w-xs">
-              The prediction arcade on Somnia. Play markets, run a community
-              DAO, ask the Oracle, race the leaderboard - every move settles
-              on-chain.
-            </p>
-            <div className="flex items-center gap-2 font-mono text-xs text-text-muted">
-              <span className="w-2 h-2 rounded-full bg-success pulse-fast" />
-              <span>Arcade: live · Shannon testnet</span>
-            </div>
-          </div>
-
-          {/* Play */}
-          <div>
-            <h4 className="font-mono text-[11px] uppercase tracking-widest text-text-muted mb-4">
-              Play
-            </h4>
-            <ul className="flex flex-col gap-3 text-sm">
-              <li>
-                <Link
-                  href="/app"
-                  className="text-text-secondary hover:text-primary transition-colors"
-                >
-                  Launch app
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/app?tab=leaderboard"
-                  className="text-text-secondary hover:text-primary transition-colors"
-                >
-                  Leaderboard
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Build */}
-          <div>
-            <h4 className="font-mono text-[11px] uppercase tracking-widest text-text-muted mb-4">
-              Build
-            </h4>
-            <ul className="flex flex-col gap-3 text-sm">
-              <li>
-                <a
-                  href="https://github.com/Saber1Y/DreamBuild"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-text-secondary hover:text-primary transition-colors"
-                >
-                  <Github className="w-4 h-4" /> Source
-                </a>
-              </li>
-              <li>
-                <a
-                  href={`https://shannon-explorer.somnia.network/address/${CONTRACTS.arcadeEngine}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-text-secondary hover:text-primary transition-colors"
-                >
-                  <ExternalLink className="w-4 h-4" /> ArcadeEngine
-                </a>
-              </li>
-              <li>
-                <a
-                  href="https://shannon-explorer.somnia.network"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-text-secondary hover:text-primary transition-colors"
-                >
-                  <ExternalLink className="w-4 h-4" /> Explorer
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Testnet note */}
-          <div className="flex flex-col gap-3">
-            <h4 className="font-mono text-[11px] uppercase tracking-widest text-text-muted mb-4">
-              Heads up
-            </h4>
-            <p className="text-sm text-text-secondary leading-relaxed">
-              Hackathon build on the Somnia Shannon testnet. All balances are
-              testnet tUSDC - fun to play, nothing real on the line.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-16 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-text-muted">
-            Built for the Somnia × DreamDEX Event Contracts hackathon.
-          </p>
-          <div className="flex items-center gap-6 font-mono text-xs text-text-muted">
-            <span>3 contracts</span>
-            <span>·</span>
-            <span>1 repo</span>
-            <span>·</span>
-            <span>same-block settlement</span>
-          </div>
-        </div>
-      </div>
-    </footer>
   );
 }
