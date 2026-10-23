@@ -147,6 +147,11 @@ contract PerpsArena is SomniaEventHandler, Ownable {
     /// whole second, keyed here in seconds, and the callback matches by second.
     mapping(uint256 => address) public scheduledPlayer;
 
+    /// Every player who has started a run, in order, so a leaderboard reads
+    /// state instead of scanning logs (Hideki makes 36,000 blocks an hour and
+    /// its RPC serves logs 1,000 blocks at a time).
+    address[] private _players;
+
     uint256 public activeRuns;
     uint256 public callbacks;
 
@@ -276,6 +281,7 @@ contract PerpsArena is SomniaEventHandler, Ownable {
                 _subscribe([SCHEDULE_SIG, bytes32(uint256(deadline) * 1000), bytes32(0), bytes32(0)], PRECOMPILE);
         }
 
+        if (stats[player].runs == 0) _players.push(player);
         stats[player].runs++;
         activeRuns++;
         emit RunStarted(player, game, pool, deadline, msg.sender);
@@ -428,6 +434,19 @@ contract PerpsArena is SomniaEventHandler, Ownable {
 
     function getRun(address player) external view returns (Run memory) {
         return _runs[player];
+    }
+
+    function playerCount() external view returns (uint256) {
+        return _players.length;
+    }
+
+    /// A page of players in join order; `limit` is clamped to what remains.
+    function getPlayers(uint256 offset, uint256 limit) external view returns (address[] memory page) {
+        uint256 total = _players.length;
+        if (offset >= total) return new address[](0);
+        uint256 end = offset + limit > total ? total : offset + limit;
+        page = new address[](end - offset);
+        for (uint256 i = offset; i < end; i++) page[i - offset] = _players[i];
     }
 
     /// Only pools the MarginBank itself registered count; a contract claiming

@@ -405,6 +405,26 @@ describe('PerpsArena', function () {
     });
   });
 
+  // --- Player registry ----------------------------------------------------------------
+
+  describe('players', function () {
+    it('lists each player once, in join order, with paging', async function () {
+      expect(await arena.playerCount()).to.equal(0n);
+      expect(await arena.getPlayers(0, 10)).to.deep.equal([]);
+
+      await startStreak(alice);
+      await arena.connect(alice).endRun(alice.address);
+      await startStreak(alice); // a second run does not list her twice
+      await startStreak(bob);
+
+      expect(await arena.playerCount()).to.equal(2n);
+      expect(await arena.getPlayers(0, 10)).to.deep.equal([alice.address, bob.address]);
+      expect(await arena.getPlayers(1, 10)).to.deep.equal([bob.address]);
+      expect(await arena.getPlayers(0, 1)).to.deep.equal([alice.address]);
+      expect(await arena.getPlayers(5, 10)).to.deep.equal([]);
+    });
+  });
+
   // --- Admin ------------------------------------------------------------------------
 
   describe('admin', function () {
