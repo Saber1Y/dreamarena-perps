@@ -1,12 +1,22 @@
-# Deploys run from the repo root so the frontend can reach mcp-server, which
-# its /api/oracle route imports. Vercel builds in frontend/ (the project's
-# Root Directory) and installs from source, so no build output or dependency
-# tree needs uploading.
+# Deploys run from the repo root so the frontend can reach mcp-server and the
+# contract deployment record, which its server routes import. Vercel builds in
+# frontend/ (the project's Root Directory) and installs from source, so no
+# build output or dependency tree needs uploading.
 node_modules
 **/node_modules
 .next
 **/.next
 contracts/artifacts
 contracts/cache
+mcp-server/dist
 .playwright-mcp
 docs
+
+# Secrets never travel with the source. Production keys live in the
+# project's encrypted environment variables.
+.env
+**/.env
+.env*.local
+**/.env*.local
+.mcp.json
+**/.mcp.json
