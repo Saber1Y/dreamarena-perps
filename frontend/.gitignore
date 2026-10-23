@@ -1,2 +1,4 @@
 .vercel
 .env*
+# The documented template ships; real env files never do.
+!.env.local.example
