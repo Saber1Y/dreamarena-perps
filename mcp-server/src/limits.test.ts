@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkOrder, lossLocked, parseLimits, type Limits, type OrderCheck } from './limits.js';
+import { checkOrder, lossLocked, parseLimits, type Limits, type OrderCheck } from './limits.ts';
 
 const limits: Limits = { markets: ['BTC', 'ETH'], maxOrderUsdso: 100, maxLeverage: 5, maxLossUsdso: 50 };
 const ok: OrderCheck = {

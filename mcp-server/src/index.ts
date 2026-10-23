@@ -22,7 +22,7 @@ import {
   runReadTool,
   type OrderPlan,
   type ToolResult,
-} from './perps.js';
+} from './perps.ts';
 
 const server = new McpServer({ name: 'dreamarena-perps', version: '2.0.0' });
 

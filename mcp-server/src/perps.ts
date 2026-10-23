@@ -29,7 +29,7 @@ import {
   type TransactionReceipt,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { checkOrder, lossLocked, parseLimits, type Limits } from './limits.js';
+import { checkOrder, lossLocked, parseLimits, type Limits } from './limits.ts';
 
 export const EXPLORER = 'https://explorer.testnet.somnia.network/tokyo';
 /** Every perp order goes out with this ceiling, as the bot kit does; gas is billed on use. */
@@ -99,11 +99,12 @@ const farFutureNs = () => (BigInt(Math.floor(Date.now() / 1000)) + 50n * 365n * 
 
 /**
  * Transient transport failures seen on this testnet: the SDK's WebSocket
- * genesis check timing out (`rpc getBlock failed: genesis check failed`) and
- * the indexer dropping a request (`indexer PerpMarkets failed: fetch failed`).
- * Two retries with a short backoff clear them; anything else surfaces at once.
+ * genesis check timing out (`rpc getBlock failed: genesis check failed`), the
+ * indexer dropping a request (`indexer PerpMarkets failed: fetch failed`), and
+ * the SDK's circuit breaker on the indexer after repeated failures. Two
+ * retries with a short backoff clear most; anything else surfaces at once.
  */
-const TRANSIENT = /genesis check failed|timed out|took too long|fetch failed|ECONNRESET|socket hang up/i;
+const TRANSIENT = /genesis check failed|timed out|took too long|fetch failed|ECONNRESET|socket hang up|circuit breaker/i;
 
 async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   for (let attempt = 1; ; attempt++) {
@@ -616,13 +617,22 @@ export async function runReadTool(name: string, args: Record<string, unknown> = 
         };
       }
       case 'dreamarena_get_account': {
-        const [account, openOrders] = await Promise.all([getAccount(), getOpenOrders()]);
+        // Equity and positions are chain reads. Open orders come from the
+        // indexer, so an indexer outage costs that list, not the account.
+        const [account, orders] = await Promise.all([
+          getAccount(),
+          getOpenOrders().then(
+            (list) => ({ list, error: undefined }),
+            (err: unknown) => ({ list: null, error: err instanceof Error ? err.message : 'unavailable' }),
+          ),
+        ]);
         return {
           ok: true,
           content: {
             ...account,
             positions: account.positions.map(({ sizeRaw: _raw, ...p }) => p),
-            openOrders,
+            openOrders: orders.list,
+            openOrdersUnavailable: orders.error ? 'The dreamDEX indexer is not answering right now.' : undefined,
           },
         };
       }
