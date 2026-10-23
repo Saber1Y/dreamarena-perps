@@ -7,8 +7,41 @@ Built for the [dreamDEX Perps Builder Bounty](https://dorahacks.io/hackathon/dre
 
 > Work in progress.
 > See [PLAN.md](PLAN.md) for the architecture and milestones.
-> The perps agent (MCP server) trades for real on testnet, and the arena contract scores runs on-chain through Reactivity.
-> The app is not built yet.
+> The app, the perps agent (MCP server) and the arena contract all run against the live testnet.
+> The app is not deployed publicly yet; run it locally as described below.
+
+## The app
+
+`frontend/` is a Next.js app with five sections:
+
+| Section | What it shows |
+| --- | --- |
+| Arena | Your current run (Survivor countdown, Streak wins, Boss health), a trade ticket with a live preview from the agent, your positions, and your run's own callbacks |
+| Agent | The agent's wiring and hard limits, a runner for its read tools with live latency, and the MCP config for Claude |
+| Leaderboard | Every player who has started a run, ranked by best streak, survivals, bosses, win rate or realized PnL, read from the contract |
+| Profile | Any player's on-chain stats, achievements and recent activity |
+| Monitor | Arena vitals and every Reactivity callback as it lands, each with the trade that fired it and a same-block check |
+
+It is a personal console: anyone can read, and trading and runs unlock with a passphrase and go through the perps agent's planner and limits, signed by the linked bot for one Perps Arena wallet.
+Server routes hold the bot key; it never reaches the browser.
+
+Run it:
+
+```bash
+cd mcp-server && npm install
+```
+
+```bash
+cd frontend && npm install && cp .env.local.example .env.local
+```
+
+Fill in `PRIVATE_KEY`, `OWNER_ADDRESS` and `CONSOLE_PASSPHRASE` in `frontend/.env.local`, then:
+
+```bash
+cd frontend && npm run dev
+```
+
+Without those three, the app runs read-only.
 
 ## The arena contract
 
@@ -25,15 +58,18 @@ No keeper, no backend.
 
 A player starts a run themselves, or their Link a Bot agent starts it for them; the pool's own `isOperatorAuthorized` check is the gate.
 
-Deployed on Hideki (chain 50383): [`0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17`](https://explorer.testnet.somnia.network/tokyo/address/0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17).
+Deployed on Hideki (chain 50383): [`0xc96B089140EfA3447fC238AaE0Af30753C0c47b6`](https://explorer.testnet.somnia.network/tokyo/address/0xc96B089140EfA3447fC238AaE0Af30753C0c47b6).
+It keeps an on-chain player list, so the leaderboard reads state instead of scanning logs.
 
-Proven live on that address:
+A Streak run played through the app on that address:
 
 | What | Transaction |
 | --- | --- |
-| Streak: the open's callback, same block as the order | [`0x4450865c…`](https://explorer.testnet.somnia.network/tokyo/tx/0x4450865c111541cfcf3a9c68f73fd848d7c24284cb25b1fee6bfcfc087712ff6) |
-| Streak: the close's callback scores a winning trade, same block | [`0x8e90da09…`](https://explorer.testnet.somnia.network/tokyo/tx/0x8e90da0985db9c977d068441325f8377b8e1a626ed52d91d1befeb8ddfd2d132) |
-| Survivor: the scheduled callback settles a win at the deadline | [`0xc6baa36c…`](https://explorer.testnet.somnia.network/tokyo/tx/0xc6baa36ce1f2c84fc92dce099f39a75cfa4253d3d27d2b4940f130d571e7cd6d) |
+| The order to open ETH long; it filled against two resting orders | [`0x299221eb…`](https://explorer.testnet.somnia.network/tokyo/tx/0x299221ebed95f6c99a00f44048315db7c910262a0ada66764d4a57ebd8b87c1e) |
+| One callback per fill, both in the order's own block 31,074,786 | [`0xe49ddc64…`](https://explorer.testnet.somnia.network/tokyo/tx/0xe49ddc6484a1fdb80a1879e4f3e616f0d07ac56609a895a4dc8fc95df247b615), [`0xcfdfa903…`](https://explorer.testnet.somnia.network/tokyo/tx/0xcfdfa903a30834b23e91832e3d48096e1d0ee75f0e36158b6a866570ad5e9ede) |
+| The close's callback, same block 31,075,535, scores a winning trade (+0.003031 USDso) | [`0xf577075f…`](https://explorer.testnet.somnia.network/tokyo/tx/0xf577075f77acbf49b1677c7a7581837f92f21f9d19a1aa8f7197311cfee6177e) |
+
+The previous deployment, [`0xc9157b64…`](https://explorer.testnet.somnia.network/tokyo/address/0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17), also proved a Survivor run settled by its scheduled callback at the deadline second ([`0xc6baa36c…`](https://explorer.testnet.somnia.network/tokyo/tx/0xc6baa36ce1f2c84fc92dce099f39a75cfa4253d3d27d2b4940f130d571e7cd6d)); the scoring code is unchanged since.
 
 Test and deploy:
 
@@ -102,7 +138,8 @@ Add `LIVE_TRADE=1` to also run a real cycle (open, half close, close, post-only 
 ```
 contracts/    PerpsArena (reactive scoreboard), forked from DreamArena's ArcadeEngine
 mcp-server/   the perps agent as an MCP server
-frontend/     Next.js app
+frontend/     Next.js app; its server routes reuse mcp-server/src/perps.ts
+scripts/      milestone checks against the live testnet
 feedback/     bug and doc reports for the feedback track
 ```
 

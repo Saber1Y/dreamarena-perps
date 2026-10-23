@@ -118,6 +118,17 @@ Scripts are in `scripts/` (`m0-markets.mjs`, `m0-event-rate.mjs`, `m0-first-orde
 - The Tokyo explorer ("somnia-explorer (blockscout-compatible)") exposes no contract verification API, so the source is not verified there. It is public in this repo, and the deployment record pins the compiler settings.
 - Two superseded arenas were retired with `scripts/retire.js` and their STT recovered: `0xdB1e…7C0D` (1.5M callback limit) and `0x6540…7F26` (exact-ms schedule match).
 
+## M3 findings (Oct 23)
+
+- The app is a personal console: public reads, and trading and runs behind a passphrase, signed by the linked bot for one Perps Arena wallet. Strangers cannot fund a perps account from a plain browser wallet today (the paper USDso voucher is gated, `feedback/01`), so browser-wallet trading was left out.
+- Privy and wagmi are gone (565 packages). Reads and actions go through Next route handlers; actions reuse the agent's `planOpen`, `planClose` and `execute`, so the app obeys the same limits as the MCP server. The bot key and passphrase appear in no client bundle (checked against the production build).
+- `PerpsArena` now keeps an on-chain player list and was redeployed at `0xc96B…47b6`. A log-scanned leaderboard would cost over 6,000 RPC calls a week on Hideki.
+- Played end to end in the browser: unlock, start a Streak run, open ETH long, close it, end the run. The open filled against two resting orders, so MarginBank emitted two `PositionUpdated` and the arena took two callbacks, both in the order's block; the close's callback scored +0.003031 USDso. The Monitor counted 3 of 3 position callbacks as same-block.
+- `/api/arena` took 3.9 s warm with separate reads; one Multicall3 batch brought it to about 0.4 s.
+- The SDK's own circuit breaker opened on the dreamDEX indexer during testing. Open orders are now best-effort in `dreamarena_get_account`, since equity and positions are chain reads.
+- Turbopack does not resolve `./limits.js` to `limits.ts` outside the app, so the agent imports `.ts` paths and `tsc` rewrites them (`rewriteRelativeImportExtensions`).
+- Lint was broken in the imported setup (ESLint 8 with eslint-config-next 16); it now uses ESLint 9 and the flat config Next documents.
+
 ## Risks
 
 1. Resolved in M2: callbacks into `PerpsArena` land in the same block as the order.
