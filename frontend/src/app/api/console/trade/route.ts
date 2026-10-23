@@ -5,6 +5,8 @@ import { requireSession } from '@/server/session';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// An order or a run transaction takes 10 to 20 seconds to confirm on this testnet.
+export const maxDuration = 60;
 
 // Orders go through the perps agent's own planner and limits: the same code
 // path, allowlist, size, leverage and loss limits as the MCP server.

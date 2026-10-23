@@ -3,6 +3,8 @@ import { getFeed } from '@/server/arena';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// A cold instance reads up to an hour of blocks, 1,000 per request.
+export const maxDuration = 60;
 
 export async function GET() {
   try {

@@ -8,6 +8,8 @@ import { requireSession } from '@/server/session';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// An order or a run transaction takes 10 to 20 seconds to confirm on this testnet.
+export const maxDuration = 60;
 
 // Somnia prices first writes to storage high: a player's first Survivor start
 // used 2.36M gas. Gas is billed on use, so arena calls carry a 10M ceiling.
