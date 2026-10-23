@@ -129,6 +129,15 @@ Scripts are in `scripts/` (`m0-markets.mjs`, `m0-event-rate.mjs`, `m0-first-orde
 - Turbopack does not resolve `./limits.js` to `limits.ts` outside the app, so the agent imports `.ts` paths and `tsc` rewrites them (`rewriteRelativeImportExtensions`).
 - Lint was broken in the imported setup (ESLint 8 with eslint-config-next 16); it now uses ESLint 9 and the flat config Next documents.
 
+## Deployment (Oct 23)
+
+- Live at [dreamarena-perps.vercel.app](https://dreamarena-perps.vercel.app), on Vercel with Fluid compute.
+- The Hideki RPC is in Tokyo (AWS), so functions run in `hnd1`. For a Next.js project the region comes from the project setting; `regions` in `vercel.json` alone left them in `iad1`.
+- `.vercelignore` now excludes every `.env`, `.env*.local` and `.mcp.json`. Before this change, `scripts/.env` (the bot key) would have been uploaded as source. A dry run of the upload set confirmed only empty templates remain.
+- Secrets are sensitive env vars, so the dashboard cannot show them again. The production passphrase differs from the local one and is mirrored in the gitignored `frontend/.env.production.local`.
+- Verified live: every public route returns 200; unlock, start a Streak run and end it all work from the deployed site, signed by the bot from Tokyo.
+- The page ships 219 KB of compressed JavaScript.
+
 ## Risks
 
 1. Resolved in M2: callbacks into `PerpsArena` land in the same block as the order.

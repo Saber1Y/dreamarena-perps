@@ -5,10 +5,11 @@ Take on challenges with your own wallet, or link an agent key that trades for yo
 
 Built for the [dreamDEX Perps Builder Bounty](https://dorahacks.io/hackathon/dreamdex-perps-bounty/detail) on the Hideki testnet (chain 50383).
 
+**Live app: [dreamarena-perps.vercel.app](https://dreamarena-perps.vercel.app)**
+
 > Work in progress.
 > See [PLAN.md](PLAN.md) for the architecture and milestones.
 > The app, the perps agent (MCP server) and the arena contract all run against the live testnet.
-> The app is not deployed publicly yet; run it locally as described below.
 
 ## The app
 
@@ -42,6 +43,17 @@ cd frontend && npm run dev
 ```
 
 Without those three, the app runs read-only.
+
+### Deploying
+
+The live app runs on Vercel from the repository root, with `frontend` as the Root Directory so its server routes can import `mcp-server/src` and `contracts/deployments`.
+`frontend/vercel.json` also installs `mcp-server`'s dependencies.
+Functions run in Tokyo (`hnd1`), next to the Hideki RPC.
+`PRIVATE_KEY`, `OWNER_ADDRESS` and `CONSOLE_PASSPHRASE` are sensitive environment variables in the Vercel project; `.vercelignore` keeps every env and MCP config file out of the upload.
+
+```bash
+vercel deploy --prod
+```
 
 ## The arena contract
 
