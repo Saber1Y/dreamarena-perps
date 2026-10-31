@@ -1,0 +1,42 @@
+{
+  "vo-01": {
+    "file": "voiceover/vo-01.wav",
+    "seconds": 3.18,
+    "text": "Most trading games ask you to trust their scoreboard."
+  },
+  "vo-02": {
+    "file": "voiceover/vo-02.wav",
+    "seconds": 2.26,
+    "text": "Dream Arena hands the scoreboard to the chain."
+  },
+  "vo-03": {
+    "file": "voiceover/vo-03.wav",
+    "seconds": 1.79,
+    "text": "Trade real perps on Dream Dex."
+  },
+  "vo-04": {
+    "file": "voiceover/vo-04.wav",
+    "seconds": 2.43,
+    "text": "Then pick a fight: Survivor, Streak, or Boss."
+  },
+  "vo-05": {
+    "file": "voiceover/vo-05.wav",
+    "seconds": 4.59,
+    "text": "The moment your position moves, Somm-nia Reactivity calls our contract, in the same block."
+  },
+  "vo-06": {
+    "file": "voiceover/vo-06.wav",
+    "seconds": 2.82,
+    "text": "No keeper. No backend. No score anyone can fake."
+  },
+  "vo-07": {
+    "file": "voiceover/vo-07.wav",
+    "seconds": 4.58,
+    "text": "Or let an AI agent trade for you, inside hard limits. It can never withdraw."
+  },
+  "vo-08": {
+    "file": "voiceover/vo-08.wav",
+    "seconds": 3.46,
+    "text": "Dream Arena. Leverage challenges, refereed by the chain."
+  }
+}

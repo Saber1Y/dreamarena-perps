@@ -20,3 +20,6 @@ docs
 **/.env*.local
 .mcp.json
 **/.mcp.json
+
+# The announcement video project is not part of the app.
+video

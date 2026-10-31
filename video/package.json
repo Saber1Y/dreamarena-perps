@@ -1,0 +1,25 @@
+{
+  "name": "dreamarena-perps-video",
+  "private": true,
+  "type": "module",
+  "description": "DreamArena Perps announcement video, rendered from code with Remotion.",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "voiceover": "node voiceover/generate.mjs",
+    "render": "remotion render src/index.ts Announcement out/dreamarena-perps.mp4",
+    "render:square": "remotion render src/index.ts AnnouncementSquare out/dreamarena-perps-square.mp4",
+    "render:vertical": "remotion render src/index.ts AnnouncementVertical out/dreamarena-perps-vertical.mp4",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.536",
+    "@remotion/google-fonts": "4.0.536",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.536"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.8",
+    "typescript": "5.9.3"
+  }
+}

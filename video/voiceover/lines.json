@@ -1,0 +1,18 @@
+{
+  "voice": {
+    "name": "The Neighbor",
+    "archetype": "feat_04_the_neighbor",
+    "instruct": "female, young adult, moderate pitch, american accent",
+    "seed": 43
+  },
+  "lines": [
+    { "id": "vo-01", "text": "Most trading games ask you to trust their scoreboard." },
+    { "id": "vo-02", "text": "Dream Arena hands the scoreboard to the chain." },
+    { "id": "vo-03", "text": "Trade real perps on Dream Dex.", "whole": true },
+    { "id": "vo-04", "text": "Then pick a fight: Survivor, Streak, or Boss.", "whole": true },
+    { "id": "vo-05", "text": "The moment your position moves, Somm-nia Reactivity calls our contract, in the same block.", "whole": true },
+    { "id": "vo-06", "text": "No keeper. No backend. No score anyone can fake.", "whole": true },
+    { "id": "vo-07", "text": "Or let an AI agent trade for you, inside hard limits. It can never withdraw." },
+    { "id": "vo-08", "text": "Dream Arena. Leverage challenges, refereed by the chain.", "whole": true }
+  ]
+}
