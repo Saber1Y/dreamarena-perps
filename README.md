@@ -17,13 +17,18 @@ Built for the [dreamDEX Perps Builder Bounty](https://dorahacks.io/hackathon/dre
 
 | Section | What it shows |
 | --- | --- |
-| Arena | Your current run (Survivor countdown, Streak wins, Boss health), a trade ticket with a live preview from the agent, your positions, and your run's own callbacks |
+| Arena | Your current run (Survivor countdown, Streak wins, Boss health) and its callback credit, a trade ticket with a live preview, your positions, and your run's own callbacks |
 | Agent | The agent's wiring and hard limits, a runner for its read tools with live latency, and the MCP config for Claude |
 | Leaderboard | Every player who has started a run, ranked by best streak, survivals, bosses, win rate or realized PnL, read from the contract |
 | Profile | Any player's on-chain stats, achievements and recent activity |
 | Monitor | Arena vitals and every Reactivity callback as it lands, each with the trade that fired it and a same-block check |
 
-It is a personal console: anyone can read, and trading and runs unlock with a passphrase and go through the perps agent's planner and limits, signed by the linked bot for one Perps Arena wallet.
+Anyone can play with their own wallet.
+Connect any browser wallet, and the app adds and switches to Somnia Tokyo.
+The player signs their own `startRun`, orders and withdrawals; the server only plans each order with the agent's code (book, tick, lot, slippage, dreamDEX's margin check) and hands back the transaction to sign.
+A player needs a little STT for gas and run credit ([faucet](https://explorer.testnet.somnia.network/tokyo/faucet)) and paper USDso margin, which dreamDEX grants to wallets that join its [Perps Arena](https://app.testnet.dreamdex.io/competition).
+
+The operator console is a second way in: a passphrase unlocks trading one linked Perps Arena wallet through the bot, under the perps agent's limits.
 Server routes hold the bot key; it never reaches the browser.
 
 Run it:
@@ -36,13 +41,13 @@ cd mcp-server && npm install
 cd frontend && npm install && cp .env.local.example .env.local
 ```
 
-Fill in `PRIVATE_KEY`, `OWNER_ADDRESS` and `CONSOLE_PASSPHRASE` in `frontend/.env.local`, then:
+For the operator console, fill in `PRIVATE_KEY`, `OWNER_ADDRESS` and `CONSOLE_PASSPHRASE` in `frontend/.env.local`, then:
 
 ```bash
 cd frontend && npm run dev
 ```
 
-Without those three, the app runs read-only.
+Without those three the console is off, and players still play with their own wallets.
 
 ### Deploying
 
@@ -70,10 +75,42 @@ No keeper, no backend.
 
 A player starts a run themselves, or their Link a Bot agent starts it for them; the pool's own `isOperatorAuthorized` check is the gate.
 
-Deployed on Hideki (chain 50383): [`0xc96B089140EfA3447fC238AaE0Af30753C0c47b6`](https://explorer.testnet.somnia.network/tokyo/address/0xc96B089140EfA3447fC238AaE0Af30753C0c47b6).
+### Who pays for the callbacks
+
+Reactivity bills every callback to the subscription's owner, and only opens a subscription for an owner holding at least 32 STT.
+The arena owns every run's subscriptions, so it holds a 32 STT bond the operator puts up once.
+Each player pays for their own callbacks:
+
+- Starting a run deposits gas credit, at least `minRunCredit` (0.05 STT, about ten of the heaviest callbacks seen or sixty typical ones).
+- Each callback measures its own gas and charges it to the player it served, at the transaction's gas price.
+- When what is left could not pay for one more heavy callback, the run ends itself in that callback and unsubscribes, so a player can never spend the bond or anyone else's credit.
+- Unused credit is the player's to withdraw between runs; `withdrawNative` lets the owner take only the bond, never credit.
+
+Metering was calibrated against real receipts.
+With 60,000 gas of overhead, two callbacks were charged 57,572 and 57,575 gas less than they cost, so `setCharging` raised it to 130,000 ([`0xd0aeb417…`](https://explorer.testnet.somnia.network/tokyo/tx/0xd0aeb41716ca163519f2dd84812ac67d3278d6c692ece1bddbc669c6fa7d5ed3)).
+The next two callbacks were charged 12,428 gas more than their receipts, about 0.00007 STT each, which stays in the bond.
+
+Deployed on Hideki (chain 50383): [`0xd87C0477205aF17C8F33B1481f65c6d3F3B4EEa7`](https://explorer.testnet.somnia.network/tokyo/address/0xd87C0477205aF17C8F33B1481f65c6d3F3B4EEa7).
 It keeps an on-chain player list, so the leaderboard reads state instead of scanning logs.
 
-A Streak run played through the app on that address:
+On that address, a fresh wallet played through the app's wallet flow, with credit in and out:
+
+| What | Transaction |
+| --- | --- |
+| `startRun` with 0.05 STT of credit | [`0xc101d6a7…`](https://explorer.testnet.somnia.network/tokyo/tx/0xc101d6a7ba374ab0b12fca455fd08b8bca0e7a1af8e8250f2c718cc9afeba8f5) |
+| `deposit`, a 0.05 STT top-up mid-run | [`0x05948200…`](https://explorer.testnet.somnia.network/tokyo/tx/0x05948200822f696c642541ca9de1c94f416c5dcd0d93145b96e864e1a4166929) |
+| `endRun` | [`0x83d78614…`](https://explorer.testnet.somnia.network/tokyo/tx/0x83d78614a0e26cbdbd3806070451b12fdf4b74c04c104033b03192c179fdae38) |
+| `withdrawCredit`, all 0.1 STT back | [`0xea07f78b…`](https://explorer.testnet.somnia.network/tokyo/tx/0xea07f78bdaf1291a63dd9c1432d989cc61f2fbf3af2c517a67d32b1c55c03a28) |
+
+And a Streak run through the operator console, each callback in its trade's own block and billed to the player:
+
+| What | Trade | Callback, same block |
+| --- | --- | --- |
+| Open ETH long, block 39,770,483 | [`0xb8dc9e88…`](https://explorer.testnet.somnia.network/tokyo/tx/0xb8dc9e8878858ab64a9d16a052769c232f04c75d23f35dabcc5ede7da88f8544) | [`0x3c9d5082…`](https://explorer.testnet.somnia.network/tokyo/tx/0x3c9d50828ed0417ccc8de82e665b283afdd2b651008420503b86725bd7d43dbd), charged 0.00099 STT |
+| Close, block 39,770,535: a losing trade ends the run | [`0x23929351…`](https://explorer.testnet.somnia.network/tokyo/tx/0x23929351989a747442eb3d87ec1f27524664baebc35ad86a19b7f7ed46390c04) | [`0xbc1145bf…`](https://explorer.testnet.somnia.network/tokyo/tx/0xbc1145bf24aab8685301c4ac2d4b6c449f3958721e07f96f1538cc9f526f0842), charged 0.00139 STT |
+
+The previous deployment, [`0xc96B0891…`](https://explorer.testnet.somnia.network/tokyo/address/0xc96B089140EfA3447fC238AaE0Af30753C0c47b6), paid every callback from one shared balance; it is retired and its STT moved to the new bond.
+A Streak run played through the app on it:
 
 | What | Transaction |
 | --- | --- |
@@ -81,7 +118,7 @@ A Streak run played through the app on that address:
 | One callback per fill, both in the order's own block 31,074,786 | [`0xe49ddc64…`](https://explorer.testnet.somnia.network/tokyo/tx/0xe49ddc6484a1fdb80a1879e4f3e616f0d07ac56609a895a4dc8fc95df247b615), [`0xcfdfa903…`](https://explorer.testnet.somnia.network/tokyo/tx/0xcfdfa903a30834b23e91832e3d48096e1d0ee75f0e36158b6a866570ad5e9ede) |
 | The close's callback, same block 31,075,535, scores a winning trade (+0.003031 USDso) | [`0xf577075f…`](https://explorer.testnet.somnia.network/tokyo/tx/0xf577075f77acbf49b1677c7a7581837f92f21f9d19a1aa8f7197311cfee6177e) |
 
-The previous deployment, [`0xc9157b64…`](https://explorer.testnet.somnia.network/tokyo/address/0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17), also proved a Survivor run settled by its scheduled callback at the deadline second ([`0xc6baa36c…`](https://explorer.testnet.somnia.network/tokyo/tx/0xc6baa36ce1f2c84fc92dce099f39a75cfa4253d3d27d2b4940f130d571e7cd6d)); the scoring code is unchanged since.
+The deployment before it, [`0xc9157b64…`](https://explorer.testnet.somnia.network/tokyo/address/0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17), also proved a Survivor run settled by its scheduled callback at the deadline second ([`0xc6baa36c…`](https://explorer.testnet.somnia.network/tokyo/tx/0xc6baa36ce1f2c84fc92dce099f39a75cfa4253d3d27d2b4940f130d571e7cd6d)); the scoring code is unchanged since.
 
 Test and deploy:
 
@@ -93,7 +130,7 @@ cd contracts && npm install && npx hardhat test
 cd contracts && npm run deploy
 ```
 
-Deploying needs `PRIVATE_KEY` in `contracts/.env` and about 34 STT on Hideki: the arena must hold 32 STT to own its subscriptions, and it pays for every callback.
+Deploying needs `PRIVATE_KEY` in `contracts/.env` and about 34 STT on Hideki: the arena holds a 33 STT bond (32 to own subscriptions, plus headroom), and players pay for their own callbacks.
 The source is not verified on the Tokyo explorer, which has no verification API; the deployment record in `contracts/deployments/50383.json` and the compiler settings in `hardhat.config.js` reproduce the bytecode.
 
 ## The perps agent
