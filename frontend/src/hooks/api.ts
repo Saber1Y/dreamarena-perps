@@ -1,6 +1,10 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { decodeEventLog, getAddress, parseAbi, type Address, type Hex } from 'viem';
+import { PERPS_ARENA_ABI } from '@/lib/abis';
+import { EXPLORER } from '@/lib/chain';
+import { browserClient, useWallet, walletError } from '@/lib/wallet';
 import type {
   AccountView,
   AgentStatus,
@@ -12,10 +16,12 @@ import type {
   LeaderRow,
   MarketDetail,
   MarketView,
+  OrderTx,
   PlayerView,
   PreviewView,
   SessionView,
 } from '@/lib/types';
+import { GAMES } from '@/lib/types';
 
 export class ApiError extends Error {}
 
@@ -83,8 +89,43 @@ export const useLeaderboard = () =>
     refetchInterval: 15_000,
   });
 
-export const useAccount = (enabled = true) =>
-  useQuery({ queryKey: ['account'], queryFn: () => tool<AccountView>('dreamarena_get_account'), refetchInterval: 5_000, enabled });
+// --- Who is playing -------------------------------------------------------------
+
+/**
+ * A connected wallet plays as itself and signs its own transactions. Without
+ * one, an unlocked operator console plays its linked wallet through the bot.
+ * Otherwise nobody is playing in this browser and the arena is read-only.
+ */
+export type Actor = { mode: 'wallet'; address: Address } | { mode: 'console'; address: string } | { mode: 'none'; address: null };
+
+export function useActor(): Actor {
+  const wallet = useWallet();
+  const session = useSession();
+  if (wallet.status === 'ready' && wallet.address) return { mode: 'wallet', address: wallet.address };
+  if (session.data?.unlocked && session.data.owner) return { mode: 'console', address: session.data.owner };
+  return { mode: 'none', address: null };
+}
+
+/** The actor's dreamDEX account: equity and positions. */
+export const useAccount = (actor: Actor) =>
+  useQuery({
+    queryKey: ['account', actor.mode, actor.address],
+    queryFn: () =>
+      actor.mode === 'wallet'
+        ? getJson<AccountView>(`/api/play/account?player=${actor.address}`)
+        : tool<AccountView>('dreamarena_get_account'),
+    enabled: actor.mode !== 'none',
+    refetchInterval: 5_000,
+  });
+
+/** STT in the connected wallet, for gas and run credit. */
+export const useSttBalance = (address: string | null) =>
+  useQuery({
+    queryKey: ['stt', address],
+    queryFn: () => browserClient.getBalance({ address: address as Address }).then((wei) => Number(wei) / 1e18),
+    enabled: Boolean(address),
+    refetchInterval: 10_000,
+  });
 
 export const useMarkets = () =>
   useQuery({
@@ -104,11 +145,15 @@ export const useMarket = (symbol: string | null) =>
 export const useAgentStatus = () =>
   useQuery({ queryKey: ['agent-status'], queryFn: () => tool<AgentStatus>('dreamarena_status'), staleTime: 60_000 });
 
-export const usePreview = (symbol: string | null, side: 'long' | 'short', notionalUsdso: number) =>
+/** A wallet's own order is checked against dreamDEX's margin; the console's against the agent's limits too. */
+export const usePreview = (actor: Actor, symbol: string | null, side: 'long' | 'short', notionalUsdso: number) =>
   useQuery({
-    queryKey: ['preview', symbol, side, notionalUsdso],
-    queryFn: () => tool<PreviewView>('dreamarena_preview_order', { symbol, side, notionalUsdso }),
-    enabled: Boolean(symbol) && notionalUsdso > 0,
+    queryKey: ['preview', actor.mode, actor.address, symbol, side, notionalUsdso],
+    queryFn: () =>
+      actor.mode === 'wallet'
+        ? send<PreviewView>('/api/play/order', 'POST', { player: actor.address, action: 'open', symbol, side, notionalUsdso, dryRun: true })
+        : tool<PreviewView>('dreamarena_preview_order', { symbol, side, notionalUsdso }),
+    enabled: actor.mode !== 'none' && Boolean(symbol) && notionalUsdso > 0,
     retry: false,
     staleTime: 3_000,
   });
@@ -118,7 +163,58 @@ export const usePreview = (symbol: string | null, side: 'long' | 'short', notion
 function useRefreshAfter() {
   const qc = useQueryClient();
   return () => {
-    for (const key of ['arena', 'account', 'feed', 'leaderboard', 'preview', 'market']) qc.invalidateQueries({ queryKey: [key] });
+    for (const key of ['arena', 'account', 'feed', 'leaderboard', 'preview', 'market', 'stt']) qc.invalidateQueries({ queryKey: [key] });
+  };
+}
+
+// --- Signing with the player's own wallet ------------------------------------------
+
+const POSITION_UPDATED = parseAbi([
+  'event PositionUpdated(address indexed account, address indexed perpPool, int128 newSize, uint128 avgEntryPrice, int256 realizedPnl, int256 entryFundingIndex)',
+]);
+
+/** Somnia prices first storage writes high; estimates get headroom, and gas is billed on use. */
+const withHeadroom = (estimate: bigint) => {
+  const padded = (estimate * 13n) / 10n;
+  return padded > 10_000_000n ? 10_000_000n : padded;
+};
+
+async function confirmed(hash: Hex) {
+  const receipt = await browserClient.waitForTransactionReceipt({ hash, timeout: 90_000 });
+  if (receipt.status !== 'success') throw new ApiError(`The transaction reverted: ${EXPLORER}/tx/${hash}`);
+  return receipt;
+}
+
+/** The trade's effect on this player's position, read from its own receipt. */
+function settled(order: OrderTx, player: Address, receipt: Awaited<ReturnType<typeof confirmed>>): Execution {
+  const before = BigInt(order.sizeBefore);
+  let after = before;
+  let entry: bigint | null = null;
+  let realized = 0n;
+  for (const log of receipt.logs) {
+    try {
+      const e = decodeEventLog({ abi: POSITION_UPDATED, data: log.data, topics: log.topics });
+      if (getAddress(e.args.account) !== player || getAddress(e.args.perpPool) !== getAddress(order.pool)) continue;
+      after = e.args.newSize;
+      entry = e.args.avgEntryPrice;
+      realized += e.args.realizedPnl;
+    } catch {
+      // another contract's log
+    }
+  }
+  const scale = 10 ** order.baseDecimals;
+  const size = (x: bigint) => Number(x < 0n ? -x : x) / scale;
+  return {
+    txHash: receipt.transactionHash,
+    explorer: `${EXPLORER}/tx/${receipt.transactionHash}`,
+    gasUsed: Number(receipt.gasUsed),
+    filled: size(after - before),
+    positionAfter: {
+      side: after === 0n ? 'flat' : after > 0n ? 'long' : 'short',
+      size: size(after),
+      entryPrice: after !== 0n && entry !== null ? Number(entry) / 1e18 : null,
+    },
+    realizedPnlUsdso: Number(realized) / 1e18,
   };
 }
 
@@ -142,14 +238,92 @@ export type TradeInput =
   | { action: 'open'; symbol: string; side: 'long' | 'short'; notionalUsdso: number }
   | { action: 'close'; symbol: string; percent?: number };
 
-export function useTrade() {
+export function useTrade(actor: Actor) {
   const refresh = useRefreshAfter();
-  return useMutation({ mutationFn: (input: TradeInput) => send<Execution>('/api/console/trade', 'POST', input), onSettled: refresh });
+  const { walletClient } = useWallet();
+  return useMutation({
+    mutationFn: async (input: TradeInput): Promise<Execution> => {
+      if (actor.mode === 'console') return send<Execution>('/api/console/trade', 'POST', input);
+      if (actor.mode !== 'wallet' || !walletClient?.account) throw new ApiError('Connect a wallet on Somnia Tokyo first.');
+      const order = await send<OrderTx>('/api/play/order', 'POST', { player: actor.address, ...input });
+      const tx = { account: walletClient.account, to: order.to as Address, data: order.data as Hex, gas: BigInt(order.gas) };
+      try {
+        // A dry run first: a mined revert carries no reason, a call does.
+        await browserClient.call(tx);
+        const hash = await walletClient.sendTransaction({ ...tx, chain: walletClient.chain });
+        return settled(order, actor.address, await confirmed(hash));
+      } catch (err) {
+        throw new ApiError(walletError(err));
+      }
+    },
+    onSettled: refresh,
+  });
 }
 
-export type RunInput = { action: 'start'; game: GameName; symbol: string; survivalSeconds?: number } | { action: 'end' };
+export type RunInput =
+  | { action: 'start'; game: GameName; symbol: string; survivalSeconds?: number }
+  | { action: 'end' }
+  /** Wallet only: add credit to a run in progress. */
+  | { action: 'deposit'; amountStt: number }
+  /** Wallet only: take back unused credit between runs. */
+  | { action: 'withdraw' };
 
-export function useRunAction() {
+export function useRunAction(actor: Actor) {
   const refresh = useRefreshAfter();
-  return useMutation({ mutationFn: (input: RunInput) => send<ArenaTx>('/api/console/run', 'POST', input), onSettled: refresh });
+  const qc = useQueryClient();
+  const { walletClient } = useWallet();
+  return useMutation({
+    mutationFn: async (input: RunInput): Promise<ArenaTx> => {
+      if (actor.mode === 'console') {
+        if (input.action !== 'start' && input.action !== 'end') throw new ApiError('Only the wallet itself can move its credit.');
+        return send<ArenaTx>('/api/console/run', 'POST', input);
+      }
+      if (actor.mode !== 'wallet' || !walletClient?.account) throw new ApiError('Connect a wallet on Somnia Tokyo first.');
+      const player = actor.address;
+      const arena = getAddress((await getJson<{ arena: ArenaView }>('/api/arena')).arena.address);
+      const read = <F extends 'credit' | 'minRunCredit'>(functionName: F) =>
+        functionName === 'credit'
+          ? browserClient.readContract({ address: arena, abi: PERPS_ARENA_ABI, functionName: 'credit', args: [player] })
+          : browserClient.readContract({ address: arena, abi: PERPS_ARENA_ABI, functionName: 'minRunCredit' });
+
+      let call;
+      if (input.action === 'start') {
+        const markets = await qc.fetchQuery({
+          queryKey: ['markets'],
+          queryFn: () => tool<{ count: number; markets: MarketView[] }>('dreamarena_list_markets').then((r) => r.markets),
+          staleTime: 60_000,
+        });
+        const market = markets.find((m) => m.symbol === input.symbol);
+        if (!market) throw new ApiError(`No market ${input.symbol}.`);
+        const [credit, minimum] = await Promise.all([read('credit'), read('minRunCredit')]);
+        call = {
+          functionName: 'startRun' as const,
+          args: [GAMES.indexOf(input.game) + 1, getAddress(market.pool), BigInt(input.survivalSeconds ?? 0)] as const,
+          // Top the credit up to the minimum; anything already there counts.
+          value: minimum > credit ? minimum - credit : 0n,
+        };
+      } else if (input.action === 'end') {
+        call = { functionName: 'endRun' as const, args: [player] as const, value: 0n };
+      } else if (input.action === 'deposit') {
+        call = { functionName: 'deposit' as const, args: [player] as const, value: BigInt(Math.round(input.amountStt * 1e6)) * 10n ** 12n };
+      } else {
+        const credit = await read('credit');
+        if (credit === 0n) throw new ApiError('There is no credit to withdraw.');
+        call = { functionName: 'withdrawCredit' as const, args: [credit] as const, value: 0n };
+      }
+
+      try {
+        const params = { account: walletClient.account, address: arena, abi: PERPS_ARENA_ABI, ...call } as const;
+        // Simulate first so a refusal comes back with the contract's reason.
+        const { request } = await browserClient.simulateContract(params as never);
+        const gas = withHeadroom(await browserClient.estimateContractGas(params as never));
+        const hash = await walletClient.writeContract({ ...(request as object), gas, chain: walletClient.chain } as never);
+        const receipt = await confirmed(hash);
+        return { txHash: hash, explorer: `${EXPLORER}/tx/${hash}`, gasUsed: Number(receipt.gasUsed) };
+      } catch (err) {
+        throw new ApiError(err instanceof ApiError ? err.message : walletError(err));
+      }
+    },
+    onSettled: refresh,
+  });
 }

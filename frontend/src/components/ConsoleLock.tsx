@@ -34,13 +34,8 @@ export function ConsoleLock() {
   }, [open]);
 
   if (!session.data) return <div className="skeleton h-8 w-24" aria-hidden />;
-  if (!session.data.configured) {
-    return (
-      <span className="badge-muted h-8 px-3" title="No passphrase, bot key or owner is configured on this deployment.">
-        <Lock className="h-3.5 w-3.5" /> Read-only
-      </span>
-    );
-  }
+  // Without an operator console, players still play with their own wallets.
+  if (!session.data.configured) return null;
 
   if (session.data.unlocked) {
     return (
@@ -54,14 +49,15 @@ export function ConsoleLock() {
     );
   }
 
+  // Visitors play with their own wallets; on a phone the operator entry would only crowd the header.
   return (
-    <div ref={wrap} className="relative">
+    <div ref={wrap} className="relative hidden sm:block">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-default bg-surface px-3 text-xs font-semibold text-text-secondary transition-colors hover:text-text-primary"
       >
-        <Lock className="h-3.5 w-3.5" /> Unlock to trade
+        <Lock className="h-3.5 w-3.5" /> Operator
       </button>
       <AnimatePresence>
         {open && (

@@ -2,13 +2,28 @@
 
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDownRight, ArrowUpRight, Flame, Lock, ShieldCheck, Swords, Timer } from 'lucide-react';
-import { useAccount, useAgentStatus, useArena, useFeed, useMarket, usePreview, useRunAction, useSession, useTrade } from '@/hooks/api';
+import { ArrowDownRight, ArrowUpRight, ExternalLink, Flame, Fuel, Lock, ShieldCheck, Swords, Timer, Wallet } from 'lucide-react';
+import {
+  useAccount,
+  useActor,
+  useAgentStatus,
+  useArena,
+  useFeed,
+  useMarket,
+  usePreview,
+  useRunAction,
+  useSession,
+  useSttBalance,
+  useTrade,
+  type Actor,
+} from '@/hooks/api';
 import { useNow } from '@/hooks/useNow';
 import { useToast } from '@/components/toast';
 import { FeedRow } from '@/components/FeedRow';
-import { BOSS_ROUNDS, SURVIVAL_CHOICES, type AccountView, type GameName, type PlayerView, type Position } from '@/lib/types';
+import { BOSS_ROUNDS, SURVIVAL_CHOICES, type AccountView, type ArenaView, type GameName, type PlayerView, type Position } from '@/lib/types';
 import { countdown, pnl, pnlTone, price, usd } from '@/lib/format';
+import { DREAMDEX_ARENA, FAUCET } from '@/lib/chain';
+import { useWallet } from '@/lib/wallet';
 
 const GAME_COPY: Record<GameName, { title: string; rule: string; needs: string; icon: typeof Timer }> = {
   Survivor: {
@@ -31,20 +46,143 @@ const GAME_COPY: Record<GameName, { title: string; rule: string; needs: string; 
   },
 };
 
-function useActions() {
-  const session = useSession();
-  return { unlocked: Boolean(session.data?.unlocked), configured: Boolean(session.data?.configured), known: Boolean(session.data) };
+/** What a visitor who is not playing yet can do about it, as one button. */
+function PlayButton({ className = 'btn-primary' }: { className?: string }) {
+  const wallet = useWallet();
+  const toast = useToast();
+  if (wallet.status === 'loading') return <span className="skeleton block h-9 w-40" aria-hidden />;
+  if (wallet.status === 'unsupported') {
+    return (
+      <a href="https://ethereum.org/en/wallets/find-wallet/" target="_blank" rel="noopener noreferrer" className={className}>
+        <Wallet className="h-4 w-4" /> Get a browser wallet
+      </a>
+    );
+  }
+  if (wallet.status === 'wrong-chain') {
+    return (
+      <button
+        className={className}
+        onClick={() => wallet.switchChain().catch(() => toast.push({ type: 'error', title: 'Network not switched', detail: 'Switch to Somnia Tokyo in your wallet.' }))}
+      >
+        Switch to Somnia Tokyo
+      </button>
+    );
+  }
+  return (
+    <button
+      className={className}
+      disabled={wallet.status === 'connecting'}
+      onClick={() => wallet.connect().catch(() => toast.push({ type: 'error', title: 'Wallet not connected', detail: 'The request was declined or closed.' }))}
+    >
+      <Wallet className="h-4 w-4" /> {wallet.status === 'connecting' ? 'Waiting for your wallet…' : 'Connect wallet to play'}
+    </button>
+  );
 }
 
 function LockedHint() {
-  const { configured, known } = useActions();
-  // Until the session is known, "read-only" would be a guess.
-  if (!known) return <span className="skeleton block h-4 w-48" aria-hidden />;
   return (
     <p className="flex items-center gap-1.5 text-xs text-text-muted">
-      <Lock className="h-3.5 w-3.5" />
-      {configured ? 'Unlock the console (top right) to trade and start runs.' : 'This deployment is read-only.'}
+      <Lock className="h-3.5 w-3.5" /> Connect a wallet to trade and start runs.
     </p>
+  );
+}
+
+/** For a visitor: the three things a run needs, in order. */
+function JoinArena({ arena }: { arena: ArenaView | undefined }) {
+  const wallet = useWallet();
+  const connected = wallet.status === 'ready';
+  const minimum = arena ? usd(arena.minRunCreditStt, 2) : '0.05';
+  const steps = [
+    {
+      title: 'Connect a wallet on Somnia Tokyo',
+      body: 'Any browser wallet. You sign your own runs and orders; this app never holds a key.',
+      action: connected ? null : <PlayButton className="btn-primary px-4 py-2 text-sm" />,
+    },
+    {
+      title: 'Get test STT',
+      body: `STT pays your gas and your run's ${minimum} STT callback credit. The faucet sends 1 STT to a wallet holding less than 1.`,
+      action: (
+        <a href={FAUCET} target="_blank" rel="noopener noreferrer" className="btn-secondary px-4 py-2 text-sm">
+          Faucet <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ),
+    },
+    {
+      title: 'Get paper USDso on dreamDEX',
+      body: "Join dreamDEX's Perps Arena for 1,000 paper USDso a week. That is the margin you trade with here.",
+      action: (
+        <a href={DREAMDEX_ARENA} target="_blank" rel="noopener noreferrer" className="btn-secondary px-4 py-2 text-sm">
+          dreamDEX <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ),
+    },
+  ];
+  return (
+    <section className="surface p-5" aria-label="Play">
+      <h2 className="text-lg font-semibold">Play with your own wallet</h2>
+      <p className="mt-1 max-w-[62ch] text-sm text-text-secondary">
+        Pick a challenge, trade real dreamDEX perps, and Somnia Reactivity scores you in the block your position changes. You pay for your own callbacks
+        from a small STT credit, and whatever is left is yours to withdraw.
+      </p>
+      <ol className="mt-5 space-y-3">
+        {steps.map((step, i) => (
+          <li key={step.title} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border p-4">
+            <span className={`num flex h-7 w-7 shrink-0 items-center justify-center self-start rounded-full text-xs font-bold sm:self-center ${i === 0 && connected ? 'bg-success text-white' : 'bg-elevated text-text-secondary'}`}>
+              {i + 1}
+            </span>
+            <div className="min-w-[200px] flex-1">
+              <p className="text-sm font-semibold">{step.title}</p>
+              <p className="mt-0.5 text-xs text-text-secondary">{step.body}</p>
+            </div>
+            {step.action}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** The player's prepaid callback gas, with what they can do about it. */
+function Credit({ actor, player, arena, active }: { actor: Actor; player: PlayerView; arena: ArenaView; active: boolean }) {
+  const runAction = useRunAction(actor);
+  const toast = useToast();
+  const credit = player.creditStt ?? 0;
+  const low = active && credit < arena.minRunCreditStt * 0.4;
+  const own = actor.mode === 'wallet';
+  const run = (input: { action: 'deposit'; amountStt: number } | { action: 'withdraw' }, done: string) =>
+    runAction.mutate(input, {
+      onSuccess: (r) => toast.push({ type: 'success', title: done, href: r.explorer }),
+      onError: (e) => toast.push({ type: 'error', title: input.action === 'deposit' ? 'Credit not added' : 'Credit not withdrawn', detail: e.message }),
+    });
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 ${low ? 'tint-warning' : 'bg-elevated'}`}>
+      <div className="flex items-center gap-2" title="Each Reactivity callback for your run is billed to this credit at the gas it used.">
+        <Fuel className={`h-4 w-4 ${low ? 'text-warning' : 'text-text-muted'}`} />
+        <div>
+          <p className="eyebrow">Callback credit</p>
+          <p className={`num text-sm font-semibold ${low ? 'text-warning' : ''}`}>{usd(credit, 4)} STT</p>
+        </div>
+      </div>
+      <p className="min-w-[180px] flex-1 text-xs text-text-muted">
+        {low
+          ? 'Running low. The run ends itself before your credit could not pay for a callback.'
+          : active
+            ? 'Each callback costs about 0.0007 to 0.0045 STT.'
+            : credit > 0
+              ? 'Left over from your runs. Yours to keep for the next run or withdraw.'
+              : 'Starting a run deposits the credit its callbacks need.'}
+      </p>
+      {own && active && (
+        <button className="btn-secondary px-3 py-1.5 text-xs" disabled={runAction.isPending} onClick={() => run({ action: 'deposit', amountStt: arena.minRunCreditStt }, 'Credit added')}>
+          {runAction.isPending ? 'Adding…' : `Add ${usd(arena.minRunCreditStt, 2)} STT`}
+        </button>
+      )}
+      {own && !active && credit > 0 && (
+        <button className="btn-secondary px-3 py-1.5 text-xs" disabled={runAction.isPending} onClick={() => run({ action: 'withdraw' }, 'Credit withdrawn')}>
+          {runAction.isPending ? 'Withdrawing…' : 'Withdraw'}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -97,13 +235,25 @@ function BossBar({ wins }: { wins: number }) {
   );
 }
 
-function RunHero({ player, account, now }: { player: PlayerView | null; account: AccountView | undefined; now: number }) {
+function RunHero({
+  actor,
+  arena,
+  player,
+  account,
+  now,
+}: {
+  actor: Actor;
+  arena: ArenaView;
+  player: PlayerView | null;
+  account: AccountView | undefined;
+  now: number;
+}) {
   const run = player?.run;
-  const runAction = useRunAction();
+  const runAction = useRunAction(actor);
   const toast = useToast();
-  const { unlocked } = useActions();
+  const playing = actor.mode !== 'none';
 
-  if (!player || !run || run.status === 'None') return <StartRun account={account} heading="Start a run" />;
+  if (!player || !run || run.status === 'None') return <StartRun actor={actor} arena={arena} player={player} account={account} heading="Start a run" />;
 
   const active = run.status === 'Active';
   const position = account?.positions.find((p) => p.symbol === run.symbol);
@@ -125,7 +275,7 @@ function RunHero({ player, account, now }: { player: PlayerView | null; account:
             <p className={`num text-lg font-semibold ${pnlTone(run.runPnl)}`}>{pnl(run.runPnl)} USDso</p>
           </div>
         </div>
-        <StartRun account={account} heading="Start another run" />
+        <StartRun actor={actor} arena={arena} player={player} account={account} heading="Start another run" />
       </div>
     );
   }
@@ -186,15 +336,19 @@ function RunHero({ player, account, now }: { player: PlayerView | null; account:
         </dl>
       </div>
 
+      <div className="px-5 pb-5">
+        <Credit actor={actor} player={player} arena={arena} active />
+      </div>
+
       <div className="flex items-center justify-between gap-3 border-t border-border bg-elevated px-5 py-3">
-        {unlocked ? (
+        {playing ? (
           <p className="text-xs text-text-muted">Trade below; the arena scores every change itself.</p>
         ) : (
           <LockedHint />
         )}
         <button
           className="btn-ghost shrink-0 whitespace-nowrap text-xs"
-          disabled={!unlocked || runAction.isPending}
+          disabled={!playing || runAction.isPending}
           onClick={() =>
             runAction.mutate(
               { action: 'end' },
@@ -212,15 +366,32 @@ function RunHero({ player, account, now }: { player: PlayerView | null; account:
   );
 }
 
-function StartRun({ account, heading }: { account: AccountView | undefined; heading: string }) {
+function StartRun({
+  actor,
+  arena,
+  player,
+  account,
+  heading,
+}: {
+  actor: Actor;
+  arena: ArenaView;
+  player: PlayerView | null;
+  account: AccountView | undefined;
+  heading: string;
+}) {
   const status = useAgentStatus();
   const markets = status.data?.limits.markets ?? [];
   const [game, setGame] = useState<GameName>('Streak');
   const [symbol, setSymbol] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(SURVIVAL_CHOICES[0].seconds);
-  const runAction = useRunAction();
+  const runAction = useRunAction(actor);
   const toast = useToast();
-  const { unlocked } = useActions();
+  const stt = useSttBalance(actor.mode === 'wallet' ? actor.address : null);
+  const playing = actor.mode !== 'none';
+  const credit = player?.creditStt ?? 0;
+  const deposit = Math.max(0, arena.minRunCreditStt - credit);
+  // Starting also pays the transaction's own gas, a few thousandths of an STT.
+  const short = actor.mode === 'wallet' && stt.data !== undefined && stt.data < deposit + 0.02;
 
   const chosen = symbol ?? markets[0] ?? null;
   const position = account?.positions.find((p) => p.symbol === chosen);
@@ -299,12 +470,35 @@ function StartRun({ account, heading }: { account: AccountView | undefined; head
         )}
       </div>
 
+      {playing && player && (
+        <div className="mt-4">
+          <Credit actor={actor} player={player} arena={arena} active={false} />
+        </div>
+      )}
+
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-        <p className={`text-xs ${ready ? 'text-success' : 'text-text-muted'}`}>{why}</p>
-        {unlocked ? (
+        <div className="space-y-1">
+          <p className={`text-xs ${ready ? 'text-success' : 'text-text-muted'}`}>{why}</p>
+          {playing && (
+            <p className="text-xs text-text-muted">
+              {deposit > 0
+                ? `Starting deposits ${usd(deposit, 4)} STT of callback credit, billed per callback. What is left stays yours.`
+                : 'Your credit covers this run; nothing extra is deposited.'}
+            </p>
+          )}
+          {short && (
+            <p className="text-xs font-medium text-warning">
+              Your wallet holds {usd(stt.data, 4)} STT, not enough for the credit and gas.{' '}
+              <a href={FAUCET} target="_blank" rel="noopener noreferrer" className="underline">
+                Get STT
+              </a>
+            </p>
+          )}
+        </div>
+        {playing ? (
           <button
             className="btn-primary"
-            disabled={!chosen || !ready || runAction.isPending}
+            disabled={!chosen || !ready || runAction.isPending || short}
             onClick={() =>
               chosen &&
               runAction.mutate(
@@ -316,10 +510,10 @@ function StartRun({ account, heading }: { account: AccountView | undefined; head
               )
             }
           >
-            {runAction.isPending ? 'Opening subscriptions…' : `Start ${game}`}
+            {runAction.isPending ? 'Opening subscriptions…' : deposit > 0 ? `Start ${game} · ${usd(deposit, 2)} STT` : `Start ${game}`}
           </button>
         ) : (
-          <LockedHint />
+          <PlayButton />
         )}
       </div>
     </section>
@@ -333,7 +527,7 @@ function StartRun({ account, heading }: { account: AccountView | undefined; head
 const PRESETS = [10, 25, 50];
 
 /** Defaults to the active run's market, so the first trade lands where the run is listening. */
-function TradeTicket({ runSymbol }: { runSymbol: string | null }) {
+function TradeTicket({ actor, runSymbol }: { actor: Actor; runSymbol: string | null }) {
   const status = useAgentStatus();
   const markets = status.data?.limits.markets ?? [];
   const [symbol, setSymbol] = useState<string | null>(null);
@@ -342,10 +536,10 @@ function TradeTicket({ runSymbol }: { runSymbol: string | null }) {
   const chosen = symbol ?? (runSymbol && markets.includes(runSymbol) ? runSymbol : null) ?? markets[0] ?? null;
   const notional = Number(amount);
   const market = useMarket(chosen);
-  const preview = usePreview(chosen, side, Number.isFinite(notional) && notional > 0 ? notional : 0);
-  const trade = useTrade();
+  const preview = usePreview(actor, chosen, side, Number.isFinite(notional) && notional > 0 ? notional : 0);
+  const trade = useTrade(actor);
   const toast = useToast();
-  const { unlocked } = useActions();
+  const playing = actor.mode !== 'none';
 
   const sideButton = (s: 'long' | 'short') => {
     const on = side === s;
@@ -366,9 +560,15 @@ function TradeTicket({ runSymbol }: { runSymbol: string | null }) {
     <section className="surface p-5" aria-label="Trade">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Trade</h2>
-        <span className="badge-muted" title="Orders go through the perps agent's planner and limits.">
-          <ShieldCheck className="h-3 w-3" /> agent limits
-        </span>
+        {actor.mode === 'console' ? (
+          <span className="badge-muted" title="Orders go through the perps agent's planner and limits.">
+            <ShieldCheck className="h-3 w-3" /> agent limits
+          </span>
+        ) : (
+          <span className="badge-muted" title="Market orders (IOC) from your own wallet, sized against your dreamDEX margin.">
+            <Wallet className="h-3 w-3" /> your wallet
+          </span>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap gap-1.5">
@@ -416,6 +616,7 @@ function TradeTicket({ runSymbol }: { runSymbol: string | null }) {
       </div>
 
       <div className="mt-4 min-h-[72px] rounded-xl border border-border p-3 text-xs">
+        {!playing && <p className="text-text-muted">Connect a wallet to see the quantity, worst price and liquidation price before you trade.</p>}
         {preview.isFetching && !preview.data && <div className="skeleton h-12 w-full" />}
         {preview.error && <p className="text-danger">{preview.error.message}</p>}
         {preview.data && (
@@ -425,7 +626,7 @@ function TradeTicket({ runSymbol }: { runSymbol: string | null }) {
             <dt className="text-text-muted">Worst price (IOC)</dt>
             <dd className="num text-right">{price(preview.data.limitPrice)}</dd>
             <dt className="text-text-muted">Account leverage after</dt>
-            <dd className="num text-right">{preview.data.projectedAccountLeverage}x</dd>
+            <dd className="num text-right">{preview.data.projectedAccountLeverage === null ? '–' : `${preview.data.projectedAccountLeverage}x`}</dd>
             <dt className="text-text-muted">Liquidation price</dt>
             <dd className="num text-right">{preview.data.projectedLiquidationPrice === null ? 'none at this size' : price(preview.data.projectedLiquidationPrice)}</dd>
             {preview.data.refusal && <dd className="col-span-2 mt-1 font-medium text-danger">{preview.data.refusal}</dd>}
@@ -434,7 +635,7 @@ function TradeTicket({ runSymbol }: { runSymbol: string | null }) {
       </div>
 
       <div className="mt-4">
-        {unlocked ? (
+        {playing ? (
           <button
             className="btn-primary w-full"
             disabled={!chosen || !(notional > 0) || trade.isPending || preview.data?.allowed === false}
@@ -455,20 +656,20 @@ function TradeTicket({ runSymbol }: { runSymbol: string | null }) {
               )
             }
           >
-            {trade.isPending ? 'Sending…' : `${side === 'long' ? 'Long' : 'Short'} ${chosen ?? ''}`}
+            {trade.isPending ? (actor.mode === 'wallet' ? 'Confirm in your wallet…' : 'Sending…') : `${side === 'long' ? 'Long' : 'Short'} ${chosen ?? ''}`}
           </button>
         ) : (
-          <LockedHint />
+          <PlayButton className="btn-primary w-full" />
         )}
       </div>
     </section>
   );
 }
 
-function PositionRow({ p }: { p: Position }) {
-  const trade = useTrade();
+function PositionRow({ actor, p }: { actor: Actor; p: Position }) {
+  const trade = useTrade(actor);
   const toast = useToast();
-  const { unlocked } = useActions();
+  const playing = actor.mode !== 'none';
   const close = (percent: number) =>
     trade.mutate(
       { action: 'close', symbol: p.symbol, percent },
@@ -494,10 +695,10 @@ function PositionRow({ p }: { p: Position }) {
         <p className="num text-sm">{p.liquidationPrice === null ? 'none' : price(p.liquidationPrice)}</p>
       </div>
       <div className="flex justify-end gap-1.5">
-        <button className="btn-secondary px-3 py-1.5 text-xs" disabled={!unlocked || trade.isPending} onClick={() => close(50)}>
+        <button className="btn-secondary px-3 py-1.5 text-xs" disabled={!playing || trade.isPending} onClick={() => close(50)}>
           Close 50%
         </button>
-        <button className="btn-secondary px-3 py-1.5 text-xs" disabled={!unlocked || trade.isPending} onClick={() => close(100)}>
+        <button className="btn-secondary px-3 py-1.5 text-xs" disabled={!playing || trade.isPending} onClick={() => close(100)}>
           Close
         </button>
       </div>
@@ -505,7 +706,7 @@ function PositionRow({ p }: { p: Position }) {
   );
 }
 
-function Positions({ account, loading, error }: { account: AccountView | undefined; loading: boolean; error: Error | null }) {
+function Positions({ actor, account, loading, error }: { actor: Actor; account: AccountView | undefined; loading: boolean; error: Error | null }) {
   return (
     <section className="surface p-5" aria-label="Positions">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -521,13 +722,22 @@ function Positions({ account, loading, error }: { account: AccountView | undefin
       {!account && error && (
         <p className="mt-3 text-sm text-danger">Could not read the account: {error.message} Retrying.</p>
       )}
-      {account && account.positions.length === 0 && (
+      {account && account.positions.length === 0 && account.equityUsdso <= 0 && (
+        <p className="mt-3 text-sm text-text-secondary">
+          This wallet has no USDso margin on dreamDEX yet.{' '}
+          <a href={DREAMDEX_ARENA} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary underline">
+            Join dreamDEX&apos;s Perps Arena
+          </a>{' '}
+          for 1,000 paper USDso, then trade here.
+        </p>
+      )}
+      {account && account.positions.length === 0 && account.equityUsdso > 0 && (
         <p className="mt-3 text-sm text-text-muted">Flat everywhere. Open a position from the ticket.</p>
       )}
       {account && account.positions.length > 0 && (
         <ul className="mt-2 divide-y divide-[var(--border-subtle)]">
           {account.positions.map((p) => (
-            <PositionRow key={p.symbol} p={p} />
+            <PositionRow key={p.symbol} actor={actor} p={p} />
           ))}
         </ul>
       )}
@@ -538,11 +748,16 @@ function Positions({ account, loading, error }: { account: AccountView | undefin
 // ---------------------------------------------------------------------------
 
 export function ArenaTab() {
-  const arena = useArena();
-  const account = useAccount();
+  const actor = useActor();
+  const session = useSession();
+  const wallet = useWallet();
+  const arena = useArena(actor.address);
+  const account = useAccount(actor);
   const feed = useFeed();
   const now = useNow();
-  const owner = arena.data?.player?.address;
+  // Until the wallet and session are known, the visitor's state would be a guess.
+  const deciding = wallet.status === 'loading' || !session.data;
+  const owner = actor.address ? arena.data?.player?.address : undefined;
   const mine = useMemo(
     () => (feed.data?.events ?? []).filter((e) => owner && e.player.toLowerCase() === owner.toLowerCase()).slice(0, 8),
     [feed.data, owner],
@@ -552,11 +767,26 @@ export function ArenaTab() {
     return <p className="surface p-5 text-sm text-danger">Could not read the arena: {arena.error.message}</p>;
   }
 
+  if (!deciding && actor.mode === 'none') {
+    return (
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <JoinArena arena={arena.data?.arena} />
+        <div className="space-y-5 lg:sticky lg:top-32 lg:self-start">
+          <TradeTicket actor={actor} runSymbol={null} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
       <div className="space-y-5">
-        {arena.isLoading ? <div className="surface h-72 skeleton" /> : <RunHero player={arena.data?.player ?? null} account={account.data} now={now} />}
-        <Positions account={account.data} loading={account.isLoading} error={account.error} />
+        {deciding || arena.isLoading || !arena.data ? (
+          <div className="surface h-72 skeleton" />
+        ) : (
+          <RunHero actor={actor} arena={arena.data.arena} player={arena.data.player} account={account.data} now={now} />
+        )}
+        <Positions actor={actor} account={account.data} loading={account.isLoading} error={account.error} />
         <section className="surface p-5" aria-label="Your run on-chain">
           <h2 className="text-lg font-semibold">Your run, on-chain</h2>
           <p className="mt-1 text-sm text-text-secondary">Every row comes from the arena contract. Callbacks show the trade that fired them and the block they share.</p>
@@ -580,7 +810,7 @@ export function ArenaTab() {
         </section>
       </div>
       <div className="space-y-5 lg:sticky lg:top-32 lg:self-start">
-        <TradeTicket runSymbol={arena.data?.player?.run.status === 'Active' ? arena.data.player.run.symbol : null} />
+        <TradeTicket actor={actor} runSymbol={arena.data?.player?.run.status === 'Active' ? arena.data.player.run.symbol : null} />
       </div>
     </div>
   );

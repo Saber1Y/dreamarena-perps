@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Activity, Bot, Swords, Trophy, User, type LucideIcon } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { ConsoleLock } from '@/components/ConsoleLock';
+import { WalletButton } from '@/components/WalletButton';
 import { useArena } from '@/hooks/api';
 import { usd } from '@/lib/format';
 
@@ -19,20 +20,22 @@ const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: 'monitor', label: 'Monitor', icon: Activity },
 ];
 
-/** Reactivity needs the arena to hold this much; callbacks spend from it. */
-function ArenaFuel() {
+/**
+ * The operator's bond: Reactivity only opens subscriptions for an owner holding
+ * 32 STT. Players pay their own callbacks from their credit, so it is not spent.
+ */
+function ArenaBond() {
   const { data } = useArena();
-  if (!data) return <div className="skeleton hidden h-8 w-36 sm:block" aria-hidden />;
-  const { balanceStt, minimumStt } = data.arena;
-  const headroom = balanceStt - minimumStt;
-  const low = headroom < 0.25;
+  if (!data) return <div className="skeleton hidden h-8 w-36 lg:block" aria-hidden />;
+  const { bondStt, minimumStt } = data.arena;
+  const low = bondStt < minimumStt;
   return (
     <div
-      className={`hidden items-center gap-2 rounded-lg border px-3 py-1.5 sm:flex ${low ? 'tint-warning' : 'border-border bg-surface'}`}
-      title={`The arena holds ${usd(balanceStt, 4)} STT. Reactivity needs ${minimumStt} STT to open subscriptions, and each callback costs 0.0007 to 0.0045 STT.`}
+      className={`hidden items-center gap-2 rounded-lg border px-3 py-1.5 lg:flex ${low ? 'tint-warning' : 'border-border bg-surface'}`}
+      title={`The arena holds a ${usd(bondStt, 4)} STT bond. Reactivity needs its subscription owner to hold ${minimumStt} STT; players pay for their own callbacks, so the bond is not spent.`}
     >
-      <span className="eyebrow">Reactivity</span>
-      <span className={`num text-xs font-semibold ${low ? 'text-warning' : 'text-text-primary'}`}>{usd(headroom, 3)} STT</span>
+      <span className="eyebrow">Bond</span>
+      <span className={`num text-xs font-semibold ${low ? 'text-warning' : 'text-text-primary'}`}>{usd(bondStt, 2)} STT</span>
     </div>
   );
 }
@@ -58,8 +61,9 @@ export function AppShell({ tab, onTab, children }: { tab: Tab; onTab: (t: Tab) =
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <ArenaFuel />
+            <ArenaBond />
             <ConsoleLock />
+            <WalletButton />
           </div>
         </div>
 

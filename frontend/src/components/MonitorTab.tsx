@@ -43,7 +43,6 @@ export function MonitorTab() {
   }, [feed.data]);
 
   const a = arena.data?.arena;
-  const headroom = a ? a.balanceStt - a.minimumStt : 0;
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
@@ -67,25 +66,22 @@ export function MonitorTab() {
               {proven.total ? `${proven.same}/${proven.total}` : '–'}
             </Vital>
           </div>
-          <div className="mt-5">
-            <div className="flex items-baseline justify-between">
-              <p className="eyebrow">Reactivity balance</p>
-              <p className="num text-xs text-text-secondary">{a ? `${usd(a.balanceStt, 4)} STT` : ''}</p>
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-elevated">
-              <div
-                className={`h-full rounded-full ${headroom < 0.25 ? 'bg-warning' : 'bg-primary'}`}
-                style={{ width: `${a ? Math.min(100, Math.max(2, (headroom / 2) * 100)) : 0}%` }}
-              />
-            </div>
-            {a ? (
-              <p className="mt-2 text-xs text-text-muted">
-                {usd(headroom, 3)} STT above the {a.minimumStt} STT Reactivity needs to open subscriptions. Callbacks cost 0.0007 to 0.0045 STT each.
-              </p>
-            ) : (
-              <span className="skeleton mt-2 block h-8 w-full" aria-hidden />
-            )}
+          <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
+            <Vital label="Bond · STT" hint="The operator's stake. Reactivity needs the subscription owner to hold 32 STT; it is not spent.">
+              {a ? <span className={a.bondStt < a.minimumStt ? 'text-warning' : ''}>{usd(a.bondStt, 2)}</span> : '–'}
+            </Vital>
+            <Vital label="Player credit · STT" hint="Prepaid callback gas across every player. Each callback is billed to the player it served.">
+              {a ? usd(a.totalCreditStt, 4) : '–'}
+            </Vital>
           </div>
+          {a ? (
+            <p className="mt-2 text-xs text-text-muted">
+              Each player pays for their own callbacks, about 0.0007 to 0.0045 STT each, from the credit their run deposits. The bond only has to stay at{' '}
+              {a.minimumStt} STT.
+            </p>
+          ) : (
+            <span className="skeleton mt-2 block h-8 w-full" aria-hidden />
+          )}
         </section>
 
         <section className="surface-flat p-5 text-sm" aria-label="How scoring works">

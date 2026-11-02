@@ -69,7 +69,7 @@ function LiveCard() {
       </div>
       {a && (
         <p className="num border-t border-border bg-elevated px-5 py-2 text-[11px] text-text-muted">
-          Somnia Tokyo testnet · head {a.head.toLocaleString('en-US')} · Reactivity balance {usd(a.balanceStt, 2)} STT
+          Somnia Tokyo testnet · head {a.head.toLocaleString('en-US')} · bond {usd(a.bondStt, 2)} STT · player credit {usd(a.totalCreditStt, 3)} STT
         </p>
       )}
     </div>
@@ -170,7 +170,7 @@ export default function LandingPage() {
               <p className="eyebrow">How a score lands</p>
               <h2 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">The trade and the score share a block.</h2>
               <p className="mt-4 max-w-[48ch] text-text-secondary">
-                Every run opens its own subscriptions, filtered to one player and one market, so the arena pays only for players in a run, not for the thousands of position changes MarginBank emits each hour.
+                Every run opens its own subscriptions, filtered to one player and one market, and each callback is billed to the player it served, from a small STT credit their run deposits. Connect any wallet and play; what you do not spend is yours to withdraw.
               </p>
             </motion.div>
             <ol className="space-y-4">
