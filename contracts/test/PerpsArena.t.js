@@ -20,6 +20,7 @@ const PLACE_ORDER_FOR = ethers
 const Game = { None: 0, Survivor: 1, Streak: 2, Boss: 3 };
 const Status = { None: 0, Active: 1, Won: 2, Lost: 3, Ended: 4 };
 const E18 = 10n ** 18n;
+const CREDIT = ethers.parseEther('0.05');
 const pad = (address) => ethers.zeroPadValue(address, 32);
 
 describe('PerpsArena', function () {
@@ -72,12 +73,12 @@ describe('PerpsArena', function () {
   const FIRED_LATE_MS = 12n;
 
   async function startStreak(player, game = Game.Streak) {
-    await arena.connect(player).startRun(game, await poolAddr(), 0);
+    await arena.connect(player).startRun(game, await poolAddr(), 0, { value: CREDIT });
   }
 
   async function startSurvivor(player, seconds = 600) {
     await bank.setSize(player.address, await poolAddr(), 10n);
-    await arena.connect(player).startRun(Game.Survivor, await poolAddr(), seconds);
+    await arena.connect(player).startRun(Game.Survivor, await poolAddr(), seconds, { value: CREDIT });
   }
 
   // --- starting a run --------------------------------------------------------
@@ -120,8 +121,8 @@ describe('PerpsArena', function () {
       await bank.setSize(alice.address, await poolAddr(), 10n);
       await bank.setSize(bob.address, await poolAddr(), -10n);
       await hre.network.provider.send('evm_setAutomine', [false]);
-      await arena.connect(alice).startRun(Game.Survivor, await poolAddr(), 600);
-      await arena.connect(bob).startRun(Game.Survivor, await poolAddr(), 600);
+      await arena.connect(alice).startRun(Game.Survivor, await poolAddr(), 600, { value: CREDIT });
+      await arena.connect(bob).startRun(Game.Survivor, await poolAddr(), 600, { value: CREDIT });
       await hre.network.provider.send('evm_mine');
       await hre.network.provider.send('evm_setAutomine', [true]);
 
@@ -141,15 +142,15 @@ describe('PerpsArena', function () {
     });
 
     it('refuses bad input', async function () {
-      await expect(arena.connect(alice).startRun(Game.None, await poolAddr(), 0)).to.be.revertedWithCustomError(arena, 'InvalidGame');
-      await expect(arena.connect(alice).startRun(Game.Streak, await fakePool.getAddress(), 0)).to.be.revertedWithCustomError(arena, 'InvalidPool');
-      await expect(arena.connect(alice).startRun(Game.Streak, ethers.ZeroAddress, 0)).to.be.revertedWithCustomError(arena, 'InvalidPool');
-      await expect(arena.connect(alice).startRun(Game.Survivor, await poolAddr(), 600)).to.be.revertedWithCustomError(arena, 'NeedOpenPosition');
+      await expect(arena.connect(alice).startRun(Game.None, await poolAddr(), 0, { value: CREDIT })).to.be.revertedWithCustomError(arena, 'InvalidGame');
+      await expect(arena.connect(alice).startRun(Game.Streak, await fakePool.getAddress(), 0, { value: CREDIT })).to.be.revertedWithCustomError(arena, 'InvalidPool');
+      await expect(arena.connect(alice).startRun(Game.Streak, ethers.ZeroAddress, 0, { value: CREDIT })).to.be.revertedWithCustomError(arena, 'InvalidPool');
+      await expect(arena.connect(alice).startRun(Game.Survivor, await poolAddr(), 600, { value: CREDIT })).to.be.revertedWithCustomError(arena, 'NeedOpenPosition');
 
       await bank.setSize(alice.address, await poolAddr(), 10n);
-      await expect(arena.connect(alice).startRun(Game.Streak, await poolAddr(), 0)).to.be.revertedWithCustomError(arena, 'NeedFlatPosition');
-      await expect(arena.connect(alice).startRun(Game.Survivor, await poolAddr(), 299)).to.be.revertedWithCustomError(arena, 'SurvivalOutOfRange');
-      await expect(arena.connect(alice).startRun(Game.Survivor, await poolAddr(), 86_401)).to.be.revertedWithCustomError(arena, 'SurvivalOutOfRange');
+      await expect(arena.connect(alice).startRun(Game.Streak, await poolAddr(), 0, { value: CREDIT })).to.be.revertedWithCustomError(arena, 'NeedFlatPosition');
+      await expect(arena.connect(alice).startRun(Game.Survivor, await poolAddr(), 299, { value: CREDIT })).to.be.revertedWithCustomError(arena, 'SurvivalOutOfRange');
+      await expect(arena.connect(alice).startRun(Game.Survivor, await poolAddr(), 86_401, { value: CREDIT })).to.be.revertedWithCustomError(arena, 'SurvivalOutOfRange');
     });
 
     it('allows one active run per player', async function () {
@@ -164,18 +165,18 @@ describe('PerpsArena', function () {
 
     it('lets only a linked bot start a run for a player', async function () {
       const p = await poolAddr();
-      await expect(arena.connect(agent).startRunFor(alice.address, Game.Streak, p, 0)).to.be.revertedWithCustomError(arena, 'NotAuthorized');
+      await expect(arena.connect(agent).startRunFor(alice.address, Game.Streak, p, 0, { value: CREDIT })).to.be.revertedWithCustomError(arena, 'NotAuthorized');
 
       // A grant for another selector, or on an unregistered pool, does not count.
       await pool.setOperator(alice.address, agent.address, '0xdeadbeef', true);
       await fakePool.setOperator(alice.address, agent.address, PLACE_ORDER_FOR, true);
-      await expect(arena.connect(agent).startRunFor(alice.address, Game.Streak, p, 0)).to.be.revertedWithCustomError(arena, 'NotAuthorized');
+      await expect(arena.connect(agent).startRunFor(alice.address, Game.Streak, p, 0, { value: CREDIT })).to.be.revertedWithCustomError(arena, 'NotAuthorized');
       await expect(
-        arena.connect(agent).startRunFor(alice.address, Game.Streak, await fakePool.getAddress(), 0),
+        arena.connect(agent).startRunFor(alice.address, Game.Streak, await fakePool.getAddress(), 0, { value: CREDIT }),
       ).to.be.revertedWithCustomError(arena, 'NotAuthorized');
 
       await pool.setOperator(alice.address, agent.address, PLACE_ORDER_FOR, true);
-      await expect(arena.connect(agent).startRunFor(alice.address, Game.Streak, p, 0))
+      await expect(arena.connect(agent).startRunFor(alice.address, Game.Streak, p, 0, { value: CREDIT }))
         .to.emit(arena, 'RunStarted')
         .withArgs(alice.address, Game.Streak, p, 0, agent.address);
     });
@@ -422,6 +423,147 @@ describe('PerpsArena', function () {
       expect(await arena.getPlayers(1, 10)).to.deep.equal([bob.address]);
       expect(await arena.getPlayers(0, 1)).to.deep.equal([alice.address]);
       expect(await arena.getPlayers(5, 10)).to.deep.equal([]);
+    });
+  });
+
+  // --- Gas credit -------------------------------------------------------------------
+
+  describe('gas credit', function () {
+    const charges = async (tx) => {
+      const receipt = await (await tx).wait();
+      return receipt.logs
+        .map((l) => {
+          try {
+            return arena.interface.parseLog(l);
+          } catch {
+            return null;
+          }
+        })
+        .filter((e) => e && e.name === 'CallbackCharged');
+    };
+
+    it('needs the minimum credit to start, and keeps it apart from the bond', async function () {
+      const p = await poolAddr();
+      await expect(arena.connect(alice).startRun(Game.Streak, p, 0, { value: CREDIT - 1n }))
+        .to.be.revertedWithCustomError(arena, 'InsufficientCredit')
+        .withArgs(CREDIT - 1n, CREDIT);
+
+      await expect(arena.connect(alice).startRun(Game.Streak, p, 0, { value: CREDIT }))
+        .to.emit(arena, 'CreditDeposited')
+        .withArgs(alice.address, alice.address, CREDIT);
+      expect(await arena.credit(alice.address)).to.equal(CREDIT);
+      expect(await arena.totalCredit()).to.equal(CREDIT);
+      expect(await arena.bond()).to.equal(ethers.parseEther('32'));
+    });
+
+    it('counts player credit out of the 32 STT the bond must hold', async function () {
+      await arena.withdrawNative(owner.address, ethers.parseEther('1'));
+      // 31 STT of bond plus plenty of credit is still not 32 STT of bond.
+      await expect(
+        arena.connect(alice).startRun(Game.Streak, await poolAddr(), 0, { value: ethers.parseEther('5') }),
+      ).to.be.revertedWithCustomError(arena, 'ArenaUnfunded');
+    });
+
+    it('charges each callback to the player it served, at no less than what the transaction cost', async function () {
+      await startStreak(alice);
+      const price = await arena.minChargeGasPrice();
+      const data = coder.encode(['int128', 'uint128', 'int256', 'int256'], [10n, 2000n * E18, 0n, 0n]);
+      const tx = await arena
+        .connect(precompile)
+        .onEvent(await bank.getAddress(), [UPDATED, pad(alice.address), pad(await poolAddr())], data, { gasPrice: price });
+      const receipt = await tx.wait();
+      const [charge] = await charges(tx);
+
+      expect(charge.args.player).to.equal(alice.address);
+      expect(charge.args.charged).to.equal(charge.args.cost);
+      // The metered gas plus overhead covers the whole transaction's gas.
+      expect(charge.args.gasUsed).to.be.gte(receipt.gasUsed);
+      expect(await arena.credit(alice.address)).to.equal(CREDIT - charge.args.charged);
+      expect(await arena.totalCredit()).to.equal(CREDIT - charge.args.charged);
+      // In this test chain nobody bills the arena, so the charge lands in the bond.
+      expect(await arena.bond()).to.equal(ethers.parseEther('32') + charge.args.charged);
+    });
+
+    it('bills the unsubscribe of a run that ends in the callback, and stale deliveries', async function () {
+      await startStreak(alice);
+      await updated(alice, 10n, 0n);
+      const before = await arena.credit(alice.address);
+      const [closing] = await charges(updated(alice, 0n, -1n * E18));
+      expect((await arena.getRun(alice.address)).status).to.equal(Status.Lost);
+      expect(await arena.credit(alice.address)).to.equal(before - closing.args.charged);
+
+      // A delivery for a player with no live run is still theirs to pay for.
+      const [stale] = await charges(updated(alice, 5n, 0n));
+      expect(stale.args.player).to.equal(alice.address);
+
+      // A schedule tick nobody holds names no player and charges nobody.
+      expect(await charges(schedule(1_000_000n))).to.have.length(0);
+    });
+
+    it('ends a run itself before its credit could not pay for a heavy callback', async function () {
+      const price = await arena.minChargeGasPrice();
+      const reserve = (await arena.CREDIT_RESERVE_GAS()) * price;
+      // Just enough to start, not enough to keep the reserve after one callback.
+      await arena.setCharging(await arena.callbackOverheadGas(), price, reserve + 1n);
+      await arena.connect(alice).startRun(Game.Streak, await poolAddr(), 0, { value: reserve + 1n });
+
+      await expect(updated(alice, 10n, 0n)).to.emit(arena, 'RunOutOfCredit').withArgs(alice.address);
+      const run = await arena.getRun(alice.address);
+      expect(run.status).to.equal(Status.Ended);
+      expect(run.subs.every((id) => id === 0n)).to.equal(true);
+      expect(await arena.activeRuns()).to.equal(0n);
+      // It never charged more than the player had.
+      expect(await arena.totalCredit()).to.equal(await arena.credit(alice.address));
+    });
+
+    it('lets only the player withdraw their credit, and only between runs', async function () {
+      await startStreak(alice);
+      await expect(arena.connect(alice).withdrawCredit(1n)).to.be.revertedWithCustomError(arena, 'RunActive');
+      await arena.connect(alice).endRun(alice.address);
+
+      const held = await arena.credit(alice.address);
+      await expect(arena.connect(bob).withdrawCredit(1n))
+        .to.be.revertedWithCustomError(arena, 'InsufficientCredit')
+        .withArgs(0n, 1n);
+      await expect(arena.connect(alice).withdrawCredit(held + 1n)).to.be.revertedWithCustomError(arena, 'InsufficientCredit');
+
+      await expect(arena.connect(alice).withdrawCredit(held)).to.changeEtherBalances([alice, arena], [held, -held]);
+      expect(await arena.credit(alice.address)).to.equal(0n);
+      expect(await arena.totalCredit()).to.equal(0n);
+    });
+
+    it('takes top-ups from anyone, and a linked bot funds a run that only the player can withdraw', async function () {
+      await arena.connect(bob).deposit(alice.address, { value: CREDIT });
+      expect(await arena.credit(alice.address)).to.equal(CREDIT);
+      await arena.connect(alice).startRun(Game.Streak, await poolAddr(), 0); // credit already there
+      await arena.connect(alice).endRun(alice.address);
+
+      await pool.setOperator(alice.address, agent.address, PLACE_ORDER_FOR, true);
+      await arena.connect(agent).startRunFor(alice.address, Game.Streak, await poolAddr(), 0, { value: CREDIT });
+      expect(await arena.credit(agent.address)).to.equal(0n);
+      expect(await arena.credit(alice.address)).to.equal(2n * CREDIT);
+    });
+
+    it('never lets the owner withdraw player credit', async function () {
+      await startStreak(alice);
+      const bond = await arena.bond();
+      await expect(arena.withdrawNative(owner.address, bond + 1n)).to.be.revertedWithCustomError(arena, 'ExceedsBond');
+      await arena.withdrawNative(owner.address, bond);
+      expect(await ethers.provider.getBalance(await arena.getAddress())).to.equal(CREDIT);
+    });
+
+    it('bounds metering settings and keeps them owner-only', async function () {
+      await expect(arena.connect(alice).setCharging(60_000, 6_000_000_000n, CREDIT)).to.be.revertedWithCustomError(
+        arena,
+        'OwnableUnauthorizedAccount',
+      );
+      await expect(arena.setCharging(1_000_001, 6_000_000_000n, CREDIT)).to.be.revertedWithCustomError(arena, 'ChargingOutOfRange');
+      await expect(arena.setCharging(60_000, 0, CREDIT)).to.be.revertedWithCustomError(arena, 'ChargingOutOfRange');
+      await expect(arena.setCharging(60_000, 21_000_000_000n, CREDIT)).to.be.revertedWithCustomError(arena, 'ChargingOutOfRange');
+      await expect(arena.setCharging(60_000, 6_000_000_000n, 0)).to.be.revertedWithCustomError(arena, 'ChargingOutOfRange');
+      await expect(arena.setCharging(80_000, 7_000_000_000n, CREDIT * 2n))
+        .to.emit(arena, 'ChargingSet')
+        .withArgs(80_000, 7_000_000_000n, CREDIT * 2n);
     });
   });
 

@@ -50,6 +50,14 @@ interface IPerpPool {
  *      and the pool, so the arena only pays for callbacks on players in a run.
  *      MarginBank emits about 9,800 PositionUpdated an hour across all traders,
  *      which rules out one unfiltered subscription.
+ *
+ *      Who pays: Reactivity bills every callback to the subscription owner,
+ *      and refuses to open a subscription for an owner holding under 32 STT.
+ *      The arena is that owner, so it holds a 32 STT bond the operator puts up
+ *      once. Players pay for their own callbacks: starting a run deposits gas
+ *      credit, each callback meters its gas and charges it to the player it
+ *      served, and a run ends itself before its credit runs dry. Unused credit
+ *      is the player's to withdraw, and the owner can never take it.
  */
 contract PerpsArena is SomniaEventHandler, Ownable {
     // -------------------------------------------------------------------------
@@ -85,6 +93,28 @@ contract PerpsArena is SomniaEventHandler, Ownable {
     /// the callback. dreamDEX's own handlers run with 50M to 100M.
     uint64 public callbackGasLimit = 10_000_000;
     bool public paused;
+
+    /// Gas a callback burns outside the metered body: the injected transaction's
+    /// intrinsic cost, calldata, the precompile check, and the charge itself.
+    /// Calibrated against Hideki receipts; set high rather than low, since any
+    /// excess stays in the bond.
+    uint64 public callbackOverheadGas = 60_000;
+    /// Floor on the price a callback is charged at, in case the injected
+    /// transaction reports a lower gas price than the precompile bills.
+    uint64 public minChargeGasPrice = 6 gwei;
+    /// Gas credit a run needs to start: about ten of the heaviest callbacks
+    /// seen on Hideki, or sixty typical ones, at 6 gwei.
+    uint256 public minRunCredit = 0.05 ether;
+    /// A run ends itself once its credit could not pay for a callback this
+    /// heavy, so a player's callbacks never draw on the bond.
+    uint256 public constant CREDIT_RESERVE_GAS = 2_000_000;
+    uint256 public constant MAX_CALLBACK_OVERHEAD_GAS = 1_000_000;
+    uint256 public constant MAX_MIN_RUN_CREDIT = 10 ether;
+
+    /// Prepaid callback gas per player, in wei.
+    mapping(address => uint256) public credit;
+    /// Sum of every player's credit; the rest of the balance is the bond.
+    uint256 public totalCredit;
 
     // -------------------------------------------------------------------------
     // State
@@ -168,6 +198,13 @@ contract PerpsArena is SomniaEventHandler, Ownable {
     event UnsubscribeFailed(address indexed player, uint256 subscriptionId);
     event PausedSet(bool paused);
     event CallbackGasLimitSet(uint64 gasLimit);
+    event CreditDeposited(address indexed player, address indexed from, uint256 amount);
+    event CreditWithdrawn(address indexed player, uint256 amount);
+    /// One per callback: the gas it metered, what it cost, and what the
+    /// player's credit covered (less only if the credit was already short).
+    event CallbackCharged(address indexed player, uint256 gasUsed, uint256 cost, uint256 charged);
+    event RunOutOfCredit(address indexed player);
+    event ChargingSet(uint64 overheadGas, uint64 minGasPrice, uint256 minRunCredit);
 
     error Paused();
     error InvalidGame();
@@ -183,28 +220,61 @@ contract PerpsArena is SomniaEventHandler, Ownable {
     error GasLimitOutOfRange();
     /// A finished run still holds a subscription; a new one would double-count.
     error StaleSubscription();
+    error InsufficientCredit(uint256 credit, uint256 required);
+    error ExceedsBond();
+    error ChargingOutOfRange();
+    error TransferFailed();
 
     constructor(address _marginBank) Ownable(msg.sender) {
         marginBank = _marginBank;
     }
 
-    /// Callbacks are paid from this balance; send STT here to fund the arena.
+    /// Plain transfers add to the bond, never to anyone's credit.
     receive() external payable {}
 
     // -------------------------------------------------------------------------
     // Runs
     // -------------------------------------------------------------------------
 
-    /// Start a run for the caller's own perps account.
-    function startRun(Game game, address pool, uint64 survivalSeconds) external {
+    /// Start a run for the caller's own perps account. Any STT sent is added to
+    /// the caller's gas credit, which must reach `minRunCredit`.
+    function startRun(Game game, address pool, uint64 survivalSeconds) external payable {
+        _deposit(msg.sender, msg.value);
         _start(msg.sender, game, pool, survivalSeconds);
     }
 
     /// Start a run for a player whose wallet linked the caller as a bot on this
     /// pool (dreamDEX Link a Bot). The pool's own operator check is the gate.
-    function startRunFor(address player, Game game, address pool, uint64 survivalSeconds) external {
+    /// STT sent becomes the player's credit, withdrawable only by the player.
+    function startRunFor(address player, Game game, address pool, uint64 survivalSeconds) external payable {
         if (!_isOperator(player, pool, msg.sender)) revert NotAuthorized();
+        _deposit(player, msg.value);
         _start(player, game, pool, survivalSeconds);
+    }
+
+    /// Add gas credit for a player, for example to top up a run in progress.
+    function deposit(address player) external payable {
+        _deposit(player, msg.value);
+    }
+
+    /// Take back unused gas credit. Only between runs, so a live run always
+    /// has the credit its next callback needs.
+    function withdrawCredit(uint256 amount) external {
+        if (_runs[msg.sender].status == Status.Active) revert RunActive();
+        uint256 held = credit[msg.sender];
+        if (amount > held) revert InsufficientCredit(held, amount);
+        credit[msg.sender] = held - amount;
+        totalCredit -= amount;
+        emit CreditWithdrawn(msg.sender, amount);
+        (bool ok,) = payable(msg.sender).call{value: amount}("");
+        if (!ok) revert TransferFailed();
+    }
+
+    function _deposit(address player, uint256 amount) internal {
+        if (amount == 0) return;
+        credit[player] += amount;
+        totalCredit += amount;
+        emit CreditDeposited(player, msg.sender, amount);
     }
 
     /// The player, or their linked bot, ends a run early. Streak wins so far are kept.
@@ -260,7 +330,8 @@ contract PerpsArena is SomniaEventHandler, Ownable {
             revert NeedFlatPosition();
         }
 
-        if (address(this).balance < SUBSCRIPTION_OWNER_MINIMUM_BALANCE) revert ArenaUnfunded();
+        if (bond() < SUBSCRIPTION_OWNER_MINIMUM_BALANCE) revert ArenaUnfunded();
+        if (credit[player] < minRunCredit) revert InsufficientCredit(credit[player], minRunCredit);
 
         delete _runs[player];
         Run storage run = _runs[player];
@@ -297,8 +368,16 @@ contract PerpsArena is SomniaEventHandler, Ownable {
      *      subscription or a widened filter can never move a score.
      */
     function _onEvent(address emitter, bytes32[] calldata eventTopics, bytes calldata data) internal override {
+        uint256 gasAtStart = gasleft();
         callbacks++;
-        if (eventTopics.length < 2) return;
+        address payer = _handle(emitter, eventTopics, data);
+        if (payer != address(0)) _charge(payer, gasAtStart);
+    }
+
+    /// Scores the callback and returns the player it was delivered for, who
+    /// pays for it; zero when no player can be named.
+    function _handle(address emitter, bytes32[] calldata eventTopics, bytes calldata data) internal returns (address) {
+        if (eventTopics.length < 2) return address(0);
 
         if (emitter == PRECOMPILE && eventTopics[0] == SCHEDULE_SIG) {
             // The firing second first, then earlier ones for a late delivery.
@@ -314,16 +393,18 @@ contract PerpsArena is SomniaEventHandler, Ownable {
                     emit Reacted(scheduled, SCHEDULE_SIG, block.number);
                     _settleSurvivor(scheduled, due);
                 }
-                return;
+                return scheduled;
             }
-            return;
+            return address(0);
         }
 
-        if (emitter != marginBank || eventTopics.length < 3) return;
+        if (emitter != marginBank || eventTopics.length < 3) return address(0);
+        // Every MarginBank subscription is filtered to one player, so the topic
+        // names who asked for this delivery, even a stale one.
         address player = address(uint160(uint256(eventTopics[1])));
         address pool = address(uint160(uint256(eventTopics[2])));
         Run storage run = _runs[player];
-        if (run.status != Status.Active || run.pool != pool) return;
+        if (run.status != Status.Active || run.pool != pool) return player;
 
         if (eventTopics[0] == POSITION_LIQUIDATED_SIG) {
             emit Reacted(player, POSITION_LIQUIDATED_SIG, block.number);
@@ -335,6 +416,33 @@ contract PerpsArena is SomniaEventHandler, Ownable {
             (int128 newSize,, int256 realizedPnl,) = abi.decode(data, (int128, uint128, int256, int256));
             _onPositionUpdated(player, run, newSize, realizedPnl);
         }
+        return player;
+    }
+
+    /// Bills this callback to the player it served. When what is left after it
+    /// could not pay for one more heavy callback, the run ends here, and the
+    /// unsubscribing that costs is billed to the player too.
+    function _charge(address player, uint256 gasAtStart) internal {
+        uint256 price = tx.gasprice;
+        if (price < minChargeGasPrice) price = minChargeGasPrice;
+        if (price > MAX_FEE_PER_GAS) price = MAX_FEE_PER_GAS;
+
+        Run storage run = _runs[player];
+        if (run.status == Status.Active) {
+            uint256 spent = (gasAtStart - gasleft() + callbackOverheadGas) * price;
+            if (credit[player] < spent + CREDIT_RESERVE_GAS * price) {
+                emit RunOutOfCredit(player);
+                _finish(player, run, Status.Ended);
+            }
+        }
+
+        uint256 gasUsed = gasAtStart - gasleft() + callbackOverheadGas;
+        uint256 cost = gasUsed * price;
+        uint256 held = credit[player];
+        uint256 charged = cost < held ? cost : held;
+        credit[player] = held - charged;
+        totalCredit -= charged;
+        emit CallbackCharged(player, gasUsed, cost, charged);
     }
 
     function _onPositionUpdated(address player, Run storage run, int128 newSize, int256 realizedPnl) internal {
@@ -436,6 +544,12 @@ contract PerpsArena is SomniaEventHandler, Ownable {
         return _runs[player];
     }
 
+    /// The operator's stake: everything the arena holds that is not player credit.
+    function bond() public view returns (uint256) {
+        uint256 balance = address(this).balance;
+        return balance > totalCredit ? balance - totalCredit : 0;
+    }
+
     function playerCount() external view returns (uint256) {
         return _players.length;
     }
@@ -465,7 +579,8 @@ contract PerpsArena is SomniaEventHandler, Ownable {
     }
 
     // -------------------------------------------------------------------------
-    // Admin: funding and safety only. The owner cannot touch a score.
+    // Admin: funding and safety only. The owner cannot touch a score or a
+    // player's credit.
     // -------------------------------------------------------------------------
 
     function setPaused(bool value) external onlyOwner {
@@ -480,8 +595,23 @@ contract PerpsArena is SomniaEventHandler, Ownable {
         emit CallbackGasLimitSet(gasLimit);
     }
 
+    /// Tune metering. Bounded so a bad value cannot make a callback free or a
+    /// run impossible to start.
+    function setCharging(uint64 overheadGas, uint64 minGasPrice, uint256 runCredit) external onlyOwner {
+        if (overheadGas > MAX_CALLBACK_OVERHEAD_GAS || minGasPrice == 0 || minGasPrice > MAX_FEE_PER_GAS) {
+            revert ChargingOutOfRange();
+        }
+        if (runCredit == 0 || runCredit > MAX_MIN_RUN_CREDIT) revert ChargingOutOfRange();
+        callbackOverheadGas = overheadGas;
+        minChargeGasPrice = minGasPrice;
+        minRunCredit = runCredit;
+        emit ChargingSet(overheadGas, minGasPrice, runCredit);
+    }
+
+    /// Only the bond leaves this way; player credit is withdrawn by players.
     function withdrawNative(address payable to, uint256 amount) external onlyOwner {
+        if (amount > bond()) revert ExceedsBond();
         (bool ok,) = to.call{value: amount}("");
-        require(ok, "withdraw failed");
+        if (!ok) revert TransferFailed();
     }
 }
