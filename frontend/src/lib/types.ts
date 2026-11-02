@@ -40,7 +40,14 @@ export interface StatsView {
 export interface ArenaView {
   address: string;
   balanceStt: number;
+  /** What Reactivity needs the arena (the subscription owner) to hold: 32 STT. */
   minimumStt: number;
+  /** The operator's stake: the balance that is not player credit. */
+  bondStt: number;
+  /** Prepaid callback gas across every player. */
+  totalCreditStt: number;
+  /** Credit a run needs to start. */
+  minRunCreditStt: number;
   callbacks: number;
   activeRuns: number;
   playerCount: number;
@@ -52,6 +59,8 @@ export interface PlayerView {
   address: string;
   run: RunView;
   stats: StatsView;
+  /** Prepaid gas this player's callbacks draw on; null where it was not read. */
+  creditStt: number | null;
 }
 
 export interface LeaderRow extends PlayerView {
@@ -148,7 +157,8 @@ export interface PreviewView {
   quantity: number;
   limitPrice: number;
   notionalUsdso: number;
-  projectedAccountLeverage: number;
+  /** Null when the account has no equity to measure leverage against. */
+  projectedAccountLeverage: number | null;
   allowed: boolean;
   refusal?: string;
   projectedLiquidationPrice: number | null;
@@ -177,4 +187,18 @@ export interface ArenaTx {
   txHash: string;
   explorer: string;
   gasUsed: number;
+}
+
+/** A player's own order, planned by the server, for their wallet to sign. */
+export interface OrderTx {
+  to: string;
+  data: string;
+  /** Gas ceiling, as a decimal string. */
+  gas: string;
+  symbol: string;
+  pool: string;
+  baseDecimals: number;
+  /** Position size before the order, raw base units, as a decimal string. */
+  sizeBefore: string;
+  preview: PreviewView;
 }

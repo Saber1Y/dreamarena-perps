@@ -1,20 +1,12 @@
 import 'server-only';
 
-import { createPublicClient, createWalletClient, defineChain, getAddress, http, type Address } from 'viem';
+import { createPublicClient, createWalletClient, getAddress, http, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import deployment from '../../../contracts/deployments/50383.json';
+import { EXPLORER, PUBLIC_RPC, hideki } from '@/lib/chain';
 
-export const RPC = process.env.HIDEKI_RPC ?? 'https://api.hideki2.infra.testnet.somnia.network';
-export const EXPLORER = 'https://explorer.testnet.somnia.network/tokyo';
-
-export const hideki = defineChain({
-  id: 50383,
-  name: 'Somnia Hideki testnet',
-  nativeCurrency: { name: 'STT', symbol: 'STT', decimals: 18 },
-  rpcUrls: { default: { http: [RPC] } },
-  blockExplorers: { default: { name: 'Somnia Tokyo explorer', url: EXPLORER } },
-  contracts: { multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' } },
-});
+export { EXPLORER, hideki };
+export const RPC = process.env.HIDEKI_RPC ?? PUBLIC_RPC;
 
 /** The deployed arena, overridable for a fresh deployment. */
 export const ARENA: Address = getAddress(process.env.PERPS_ARENA ?? deployment.contracts.perpsArena);

@@ -20,7 +20,8 @@ const REASONS: Record<string, string> = {
   NeedFlatPosition: 'Streak and Boss start flat. Close your position in this market first.',
   RunActive: 'A run is already active. End it before starting another.',
   NoActiveRun: 'There is no active run to end.',
-  ArenaUnfunded: 'The arena is below the 32 STT Reactivity needs. Top it up first.',
+  ArenaUnfunded: 'The arena bond is below the 32 STT Reactivity needs. The operator has to top it up.',
+  InsufficientCredit: 'Not enough gas credit to start a run.',
   Paused: 'The arena is paused.',
   NotAuthorized: 'The bot is not linked to this wallet on that market. Check Link a Bot in dreamDEX.',
   SurvivalOutOfRange: 'Survivor lasts between 5 minutes and 24 hours.',
@@ -72,12 +73,19 @@ export async function POST(req: Request) {
         if (!choice) return NextResponse.json({ error: 'Pick how long to survive.' }, { status: 400 });
         seconds = BigInt(choice.seconds);
       }
+      // The bot pays the run's gas credit: whatever tops the wallet up to the
+      // minimum. It becomes the wallet's credit, which only the wallet can withdraw.
+      const [credit, minimum] = await Promise.all([
+        publicClient.readContract({ address: ARENA, abi: PERPS_ARENA_ABI, functionName: 'credit', args: [owner] }),
+        publicClient.readContract({ address: ARENA, abi: PERPS_ARENA_ABI, functionName: 'minRunCredit' }),
+      ]);
       const { request } = await publicClient.simulateContract({
         account: bot,
         address: ARENA,
         abi: PERPS_ARENA_ABI,
         functionName: 'startRunFor',
         args: [owner, gameIndex + 1, market.pool, seconds],
+        value: minimum > credit ? minimum - credit : 0n,
         gas: ARENA_GAS,
       });
       hash = await walletClient.writeContract(request);

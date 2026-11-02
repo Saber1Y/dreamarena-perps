@@ -19,7 +19,33 @@ export const PERPS_ARENA_ABI = [
   },
   {
     "inputs": [],
+    "name": "ChargingOutOfRange",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ExceedsBond",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "GasLimitOutOfRange",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "credit",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "required",
+        "type": "uint256"
+      }
+    ],
+    "name": "InsufficientCredit",
     "type": "error"
   },
   {
@@ -105,6 +131,42 @@ export const PERPS_ARENA_ABI = [
     "type": "error"
   },
   {
+    "inputs": [],
+    "name": "TransferFailed",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "player",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "gasUsed",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "cost",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "charged",
+        "type": "uint256"
+      }
+    ],
+    "name": "CallbackCharged",
+    "type": "event"
+  },
+  {
     "anonymous": false,
     "inputs": [
       {
@@ -115,6 +177,75 @@ export const PERPS_ARENA_ABI = [
       }
     ],
     "name": "CallbackGasLimitSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "overheadGas",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "minGasPrice",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "minRunCredit",
+        "type": "uint256"
+      }
+    ],
+    "name": "ChargingSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "player",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "from",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "CreditDeposited",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "player",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "CreditWithdrawn",
     "type": "event"
   },
   {
@@ -238,6 +369,19 @@ export const PERPS_ARENA_ABI = [
         "internalType": "address",
         "name": "player",
         "type": "address"
+      }
+    ],
+    "name": "RunOutOfCredit",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "player",
+        "type": "address"
       },
       {
         "indexed": false,
@@ -332,6 +476,19 @@ export const PERPS_ARENA_ABI = [
   },
   {
     "inputs": [],
+    "name": "CREDIT_RESERVE_GAS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "MAX_CALLBACK_GAS_LIMIT",
     "outputs": [
       {
@@ -345,12 +502,38 @@ export const PERPS_ARENA_ABI = [
   },
   {
     "inputs": [],
+    "name": "MAX_CALLBACK_OVERHEAD_GAS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "MAX_FEE_PER_GAS",
     "outputs": [
       {
         "internalType": "uint64",
         "name": "",
         "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_MIN_RUN_CREDIT",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -488,7 +671,33 @@ export const PERPS_ARENA_ABI = [
   },
   {
     "inputs": [],
+    "name": "bond",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "callbackGasLimit",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "callbackOverheadGas",
     "outputs": [
       {
         "internalType": "uint64",
@@ -523,6 +732,38 @@ export const PERPS_ARENA_ABI = [
     "name": "cleanup",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "credit",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "player",
+        "type": "address"
+      }
+    ],
+    "name": "deposit",
+    "outputs": [],
+    "stateMutability": "payable",
     "type": "function"
   },
   {
@@ -660,6 +901,32 @@ export const PERPS_ARENA_ABI = [
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "minChargeGasPrice",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "minRunCredit",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -763,6 +1030,29 @@ export const PERPS_ARENA_ABI = [
   {
     "inputs": [
       {
+        "internalType": "uint64",
+        "name": "overheadGas",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "minGasPrice",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint256",
+        "name": "runCredit",
+        "type": "uint256"
+      }
+    ],
+    "name": "setCharging",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "bool",
         "name": "value",
         "type": "bool"
@@ -793,7 +1083,7 @@ export const PERPS_ARENA_ABI = [
     ],
     "name": "startRun",
     "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "payable",
     "type": "function"
   },
   {
@@ -821,7 +1111,7 @@ export const PERPS_ARENA_ABI = [
     ],
     "name": "startRunFor",
     "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "payable",
     "type": "function"
   },
   {
@@ -898,6 +1188,19 @@ export const PERPS_ARENA_ABI = [
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "totalCredit",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -906,6 +1209,19 @@ export const PERPS_ARENA_ABI = [
       }
     ],
     "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "withdrawCredit",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

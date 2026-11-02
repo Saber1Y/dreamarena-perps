@@ -36,7 +36,7 @@ type RawRun = {
 };
 type RawStats = readonly [number, number, number, number, number, number, number, bigint];
 
-function toPlayer(address: Address, run: RawRun, stats: RawStats, names: Map<string, string>): PlayerView {
+function toPlayer(address: Address, run: RawRun, stats: RawStats, names: Map<string, string>, credit: bigint | null = null): PlayerView {
   const active = run.pool !== '0x0000000000000000000000000000000000000000';
   return {
     address,
@@ -62,6 +62,7 @@ function toPlayer(address: Address, run: RawRun, stats: RawStats, names: Map<str
       winningTrades: stats[6],
       realizedPnl: usd(stats[7]),
     },
+    creditStt: credit === null ? null : usd(credit),
   };
 }
 
@@ -73,9 +74,13 @@ const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11' as const;
  * call in hundreds of milliseconds, so separate reads added up to seconds.
  */
 export async function getArenaAndPlayer(player: Address | null): Promise<{ arena: ArenaView; player: PlayerView | null }> {
-  const arenaCall = <F extends 'callbacks' | 'activeRuns' | 'playerCount' | 'paused' | 'SUBSCRIPTION_OWNER_MINIMUM_BALANCE'>(functionName: F) =>
-    ({ address: ARENA, abi: PERPS_ARENA_ABI, functionName }) as const;
-  const [[balance, callbacks, activeRuns, playerCount, paused, minimum, run, stats], head, names] = await Promise.all([
+  const arenaCall = <
+    F extends 'callbacks' | 'activeRuns' | 'playerCount' | 'paused' | 'SUBSCRIPTION_OWNER_MINIMUM_BALANCE' | 'bond' | 'totalCredit' | 'minRunCredit',
+  >(
+    functionName: F,
+  ) => ({ address: ARENA, abi: PERPS_ARENA_ABI, functionName }) as const;
+  const [[balance, callbacks, activeRuns, playerCount, paused, minimum, bond, totalCredit, minRunCredit, run, stats, credit], head, names] =
+    await Promise.all([
     publicClient.multicall({
       allowFailure: false,
       contracts: [
@@ -85,9 +90,13 @@ export async function getArenaAndPlayer(player: Address | null): Promise<{ arena
         arenaCall('playerCount'),
         arenaCall('paused'),
         arenaCall('SUBSCRIPTION_OWNER_MINIMUM_BALANCE'),
+        arenaCall('bond'),
+        arenaCall('totalCredit'),
+        arenaCall('minRunCredit'),
         // Without a player this reads the arena's own empty slot, and the result is dropped below.
         { address: ARENA, abi: PERPS_ARENA_ABI, functionName: 'getRun', args: [player ?? ARENA] },
         { address: ARENA, abi: PERPS_ARENA_ABI, functionName: 'stats', args: [player ?? ARENA] },
+        { address: ARENA, abi: PERPS_ARENA_ABI, functionName: 'credit', args: [player ?? ARENA] },
       ],
     }),
     publicClient.getBlockNumber(),
@@ -98,13 +107,16 @@ export async function getArenaAndPlayer(player: Address | null): Promise<{ arena
       address: ARENA,
       balanceStt: usd(balance),
       minimumStt: usd(minimum),
+      bondStt: usd(bond),
+      totalCreditStt: usd(totalCredit),
+      minRunCreditStt: usd(minRunCredit),
       callbacks: Number(callbacks),
       activeRuns: Number(activeRuns),
       playerCount: Number(playerCount),
       paused,
       head: Number(head),
     },
-    player: player ? toPlayer(player, run as RawRun, stats as RawStats, names) : null,
+    player: player ? toPlayer(player, run as RawRun, stats as RawStats, names, credit) : null,
   };
 }
 
