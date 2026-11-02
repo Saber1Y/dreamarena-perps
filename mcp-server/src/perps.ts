@@ -21,6 +21,7 @@ import {
   createPublicClient,
   createWalletClient,
   decodeEventLog,
+  encodeFunctionData,
   getAddress,
   http,
   parseAbi,
@@ -33,7 +34,7 @@ import { checkOrder, lossLocked, parseLimits, type Limits } from './limits.ts';
 
 export const EXPLORER = 'https://explorer.testnet.somnia.network/tokyo';
 /** Every perp order goes out with this ceiling, as the bot kit does; gas is billed on use. */
-const ORDER_GAS = 10_000_000n;
+export const ORDER_GAS = 10_000_000n;
 const ONE = 10n ** 18n; // price and collateral (USDso) both use 18 decimals
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
@@ -281,30 +282,38 @@ export interface Account {
   positions: Position[];
 }
 
-export async function getAccount(): Promise<Account> {
-  if (!owner) throw new Error('No account configured: set OWNER_ADDRESS or PRIVATE_KEY.');
+async function readAccount(address: Address) {
   const markets = await listMarkets();
-  const equityRaw = await retry(() => client.tryGetPerpAccountEquity(markets[0].marginBank, owner));
+  const equityRaw = await retry(() => client.tryGetPerpAccountEquity(markets[0].marginBank, address));
   if (equityRaw === null) throw new Error('Account equity is unavailable: a price feed is stale. Try again shortly.');
   // This equity leaves out margin locked by resting orders (feedback/03), so
   // a resting order lowers it until cancelled. That can only trip the loss
   // limit early, never late.
   const equity = usd(equityRaw);
-  // The loss limit is measured from the first equity this process sees, unless pinned by env.
-  if (baselineEquity === null) baselineEquity = equity;
-
-  const positions = (await Promise.all(markets.map((m) => readPosition(m, owner)))).filter(
+  const positions = (await Promise.all(markets.map((m) => readPosition(m, address)))).filter(
     (p): p is Position => p !== null,
   );
   const exposure = positions.reduce((sum, p) => sum + p.notionalUsdso, 0);
+  return { owner: address, equityUsdso: equity, leverage: equity > 0 ? exposure / equity : 0, positions };
+}
+
+/** The account the agent trades, with its loss limit applied. */
+export async function getAccount(): Promise<Account> {
+  if (!owner) throw new Error('No account configured: set OWNER_ADDRESS or PRIVATE_KEY.');
+  const account = await readAccount(owner);
+  // The loss limit is measured from the first equity this process sees, unless pinned by env.
+  if (baselineEquity === null) baselineEquity = account.equityUsdso;
   return {
-    owner,
-    equityUsdso: equity,
+    ...account,
     baselineEquityUsdso: baselineEquity,
-    reduceOnly: lossLocked(config.limits, equity, baselineEquity),
-    leverage: equity > 0 ? exposure / equity : 0,
-    positions,
+    reduceOnly: lossLocked(config.limits, account.equityUsdso, baselineEquity),
   };
+}
+
+/** Any player's own account. The agent's loss limit is the agent's; a player trading their own wallet has none. */
+export async function getPlayerAccount(address: Address): Promise<Account> {
+  const account = await readAccount(getAddress(address));
+  return { ...account, baselineEquityUsdso: account.equityUsdso, reduceOnly: false };
 }
 
 export async function getOpenOrders() {
@@ -352,6 +361,17 @@ function quantityFor(market: Market, notionalUsdso: number, price: bigint): bigi
   return quantity;
 }
 
+/**
+ * Who an order is planned for. By default the agent's account under the
+ * agent's limits; a player's own wallet passes its address and no limits, and
+ * dreamDEX's own margin checks are what apply.
+ */
+export interface PlanFor {
+  player?: Address;
+}
+
+const planAccount = (who: PlanFor) => (who.player ? getPlayerAccount(who.player) : getAccount());
+
 function finishPlan(
   market: Market,
   account: Account,
@@ -360,26 +380,29 @@ function finishPlan(
   quantity: bigint,
   orderType: number,
   reducing: boolean,
+  limits: Limits | null,
 ): OrderPlan {
   const notionalUsdso = usd((quantity * price) / 10n ** BigInt(market.baseDecimals));
   const exposure = account.positions.reduce((sum, p) => sum + p.notionalUsdso, 0);
   const projectedLeverage =
     account.equityUsdso > 0 ? (reducing ? exposure - notionalUsdso : exposure + notionalUsdso) / account.equityUsdso : Infinity;
-  const refusal = checkOrder(config.limits, {
-    symbol: market.symbol,
-    reducing,
-    notionalUsdso,
-    projectedLeverage,
-    equityUsdso: account.equityUsdso,
-    baselineEquityUsdso: account.baselineEquityUsdso,
-  });
+  const refusal = limits
+    ? checkOrder(limits, {
+        symbol: market.symbol,
+        reducing,
+        notionalUsdso,
+        projectedLeverage,
+        equityUsdso: account.equityUsdso,
+        baselineEquityUsdso: account.baselineEquityUsdso,
+      })
+    : null;
   return { market, isBid, price, quantity, orderType, reducing, notionalUsdso, projectedLeverage, refusal, account };
 }
 
 /** Plan a market (IOC) order that opens or adds to a position. Refuses to flip an opposite one. */
-export async function planOpen(symbol: string, side: Side, notionalUsdso: number): Promise<OrderPlan> {
+export async function planOpen(symbol: string, side: Side, notionalUsdso: number, who: PlanFor = {}): Promise<OrderPlan> {
   const market = await findMarket(symbol);
-  const [account, book] = await Promise.all([getAccount(), getBook(market)]);
+  const [account, book] = await Promise.all([planAccount(who), getBook(market)]);
   const existing = account.positions.find((p) => p.symbol === market.symbol);
   if (existing && existing.side !== side) {
     throw new Error(`There is an open ${existing.side} on ${market.symbol}. Close it with dreamarena_close_position before going ${side}.`);
@@ -387,14 +410,15 @@ export async function planOpen(symbol: string, side: Side, notionalUsdso: number
   const isBid = side === 'long';
   const price = crossingPrice(market, book, isBid);
   const touch = (isBid ? book.bestAsk : book.bestBid) as bigint;
-  return finishPlan(market, account, isBid, price, quantityFor(market, notionalUsdso, touch), ORDER_TYPE.MARKET, false);
+  const limits = who.player ? null : config.limits;
+  return finishPlan(market, account, isBid, price, quantityFor(market, notionalUsdso, touch), ORDER_TYPE.MARKET, false, limits);
 }
 
 /** Plan a market (IOC) order that closes `percent` of a position. It can never add exposure. */
-export async function planClose(symbol: string, percent = 100): Promise<OrderPlan> {
+export async function planClose(symbol: string, percent = 100, who: PlanFor = {}): Promise<OrderPlan> {
   if (!(percent > 0 && percent <= 100)) throw new Error('percent must be greater than 0 and at most 100.');
   const market = await findMarket(symbol);
-  const [account, book] = await Promise.all([getAccount(), getBook(market)]);
+  const [account, book] = await Promise.all([planAccount(who), getBook(market)]);
   const position = account.positions.find((p) => p.symbol === market.symbol);
   if (!position) throw new Error(`There is no open ${market.symbol} position to close.`);
 
@@ -404,7 +428,8 @@ export async function planClose(symbol: string, percent = 100): Promise<OrderPla
   if (quantity < market.minQuantity || size - quantity < market.minQuantity) quantity = size;
 
   const isBid = position.side === 'short';
-  return finishPlan(market, account, isBid, crossingPrice(market, book, isBid), quantity, ORDER_TYPE.MARKET, true);
+  const limits = who.player ? null : config.limits;
+  return finishPlan(market, account, isBid, crossingPrice(market, book, isBid), quantity, ORDER_TYPE.MARKET, true, limits);
 }
 
 /** Plan a resting limit order. It always counts as adding exposure, the conservative reading. */
@@ -415,13 +440,35 @@ export async function planLimit(symbol: string, side: Side, price: number, notio
   const priceRaw = roundDown(BigInt(Math.round(price * 1e6)) * 10n ** 12n, market.tickSize);
   if (priceRaw === 0n) throw new Error(`price is below ${market.symbol}'s tick size.`);
   const quantity = quantityFor(market, notionalUsdso, priceRaw);
-  return finishPlan(market, account, side === 'long', priceRaw, quantity, postOnly ? ORDER_TYPE.POST_ONLY : ORDER_TYPE.LIMIT, false);
+  return finishPlan(market, account, side === 'long', priceRaw, quantity, postOnly ? ORDER_TYPE.POST_ONLY : ORDER_TYPE.LIMIT, false, config.limits);
+}
+
+/** An account as JSON can carry it: raw sizes are bigints. */
+export const accountView = (account: Account) => ({
+  ...account,
+  positions: account.positions.map(({ sizeRaw: _raw, ...p }) => p),
+});
+
+/** The plan as the trade ticket shows it, with the liquidation price it would leave. */
+export async function previewPlan(plan: OrderPlan) {
+  const liq = await retry(() =>
+    client.previewPerpLiquidationPrice({
+      pool: plan.market.pool,
+      marginBank: plan.market.marginBank,
+      account: plan.account.owner,
+      isBid: plan.isBid,
+      quantity: plan.quantity,
+      price: plan.price,
+    }),
+  );
+  const projected = liq.priceable && liq.projectedLiquidationPrice !== null ? BigInt(liq.projectedLiquidationPrice) : 0n;
+  return { ...describePlan(plan), projectedLiquidationPrice: projected === 0n ? null : usd(projected) };
 }
 
 export function describePlan(plan: OrderPlan) {
   return {
     market: plan.market.symbol,
-    side: plan.isBid ? 'buy' : 'sell',
+    side: plan.isBid ? ('buy' as const) : ('sell' as const),
     effect: plan.reducing ? 'reduce' : 'open or add',
     orderType: plan.orderType === ORDER_TYPE.MARKET ? 'market (IOC)' : plan.orderType === ORDER_TYPE.POST_ONLY ? 'post-only limit' : 'limit',
     quantity: human(plan.quantity, plan.market.baseDecimals),
@@ -501,21 +548,45 @@ async function send(functionName: 'placeOrderFor' | 'placeOrder', args: readonly
   return receipt;
 }
 
-export async function execute(plan: OrderPlan): Promise<Execution> {
-  if (plan.refusal) throw new Error(plan.refusal);
-  if (!owner || !bot) throw new Error('No PRIVATE_KEY configured, so this server is read-only.');
+/** Refuses an order the account's margin cannot carry, as dreamDEX would. */
+export async function checkCapacity(plan: OrderPlan): Promise<void> {
   const { market } = plan;
-
   const max = await retry(() =>
-    client.getMaxPerpOrderSize({ pool: market.pool, marginBank: market.marginBank, account: owner, isBid: plan.isBid, price: plan.price }),
+    client.getMaxPerpOrderSize({
+      pool: market.pool,
+      marginBank: market.marginBank,
+      account: plan.account.owner,
+      isBid: plan.isBid,
+      price: plan.price,
+    }),
   );
   if (!max.priceable) throw new Error(`${market.symbol} has no live mark price to size against.`);
   if (!max.placeable || plan.quantity > BigInt(max.maxQuantity)) {
     throw new Error(`The account cannot take this order: limited by ${max.limitedBy}.`);
   }
+}
+
+const orderArgs = (plan: OrderPlan) =>
+  [plan.isBid, 0n, plan.price, plan.quantity, farFutureNs(), plan.orderType, 0, ZERO_ADDRESS, 0n] as const;
+
+/** The plan as the player's own `placeOrder` transaction, for their wallet to sign. */
+export function orderTransaction(plan: OrderPlan) {
+  return {
+    to: plan.market.pool,
+    data: encodeFunctionData({ abi: POOL_ABI, functionName: 'placeOrder', args: orderArgs(plan) }),
+    gas: ORDER_GAS,
+  };
+}
+
+export async function execute(plan: OrderPlan): Promise<Execution> {
+  if (plan.refusal) throw new Error(plan.refusal);
+  if (!owner || !bot) throw new Error('No PRIVATE_KEY configured, so this server is read-only.');
+  const { market } = plan;
+
+  await checkCapacity(plan);
 
   const before = plan.account.positions.find((p) => p.symbol === market.symbol)?.sizeRaw ?? 0n;
-  const common = [plan.isBid, 0n, plan.price, plan.quantity, farFutureNs(), plan.orderType, 0, ZERO_ADDRESS, 0n] as const;
+  const common = orderArgs(plan);
   const receipt =
     owner === bot.address
       ? await send('placeOrder', common, market.pool)
@@ -629,8 +700,7 @@ export async function runReadTool(name: string, args: Record<string, unknown> = 
         return {
           ok: true,
           content: {
-            ...account,
-            positions: account.positions.map(({ sizeRaw: _raw, ...p }) => p),
+            ...accountView(account),
             openOrders: orders.list,
             openOrdersUnavailable: orders.error ? 'The dreamDEX indexer is not answering right now.' : undefined,
           },
@@ -639,21 +709,7 @@ export async function runReadTool(name: string, args: Record<string, unknown> = 
       case 'dreamarena_preview_order': {
         const side = args.side === 'short' ? 'short' : 'long';
         const plan = await planOpen(String(args.symbol ?? ''), side, Number(args.notionalUsdso));
-        const liq = await retry(() =>
-          client.previewPerpLiquidationPrice({
-            pool: plan.market.pool,
-            marginBank: plan.market.marginBank,
-            account: plan.account.owner,
-            isBid: plan.isBid,
-            quantity: plan.quantity,
-            price: plan.price,
-          }),
-        );
-        const projected = liq.priceable && liq.projectedLiquidationPrice !== null ? BigInt(liq.projectedLiquidationPrice) : 0n;
-        return {
-          ok: true,
-          content: { ...describePlan(plan), projectedLiquidationPrice: projected === 0n ? null : usd(projected) },
-        };
+        return { ok: true, content: await previewPlan(plan) };
       }
       default:
         return { ok: false, error: `Unknown tool "${name}".` };
