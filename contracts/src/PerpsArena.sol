@@ -260,13 +260,26 @@ contract PerpsArena is SomniaEventHandler, Ownable {
     /// Take back unused gas credit. Only between runs, so a live run always
     /// has the credit its next callback needs.
     function withdrawCredit(uint256 amount) external {
-        if (_runs[msg.sender].status == Status.Active) revert RunActive();
-        uint256 held = credit[msg.sender];
+        _withdrawCredit(msg.sender, amount);
+    }
+
+    /// A player's linked bot returns their unused credit to them. dreamDEX
+    /// wallets are smart accounts that only trade through linked bots, so the
+    /// bot is often the only thing that can ask; the STT still only ever goes
+    /// to the player.
+    function withdrawCreditFor(address player, address pool, uint256 amount) external {
+        if (!_isOperator(player, pool, msg.sender)) revert NotAuthorized();
+        _withdrawCredit(player, amount);
+    }
+
+    function _withdrawCredit(address player, uint256 amount) internal {
+        if (_runs[player].status == Status.Active) revert RunActive();
+        uint256 held = credit[player];
         if (amount > held) revert InsufficientCredit(held, amount);
-        credit[msg.sender] = held - amount;
+        credit[player] = held - amount;
         totalCredit -= amount;
-        emit CreditWithdrawn(msg.sender, amount);
-        (bool ok,) = payable(msg.sender).call{value: amount}("");
+        emit CreditWithdrawn(player, amount);
+        (bool ok,) = payable(player).call{value: amount}("");
         if (!ok) revert TransferFailed();
     }
 

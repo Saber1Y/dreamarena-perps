@@ -532,6 +532,28 @@ describe('PerpsArena', function () {
       expect(await arena.totalCredit()).to.equal(0n);
     });
 
+    it("lets a linked bot return a player's credit, always to the player", async function () {
+      const p = await poolAddr();
+      await pool.setOperator(alice.address, agent.address, PLACE_ORDER_FOR, true);
+      await arena.connect(agent).startRunFor(alice.address, Game.Streak, p, 0, { value: CREDIT });
+      await expect(arena.connect(agent).withdrawCreditFor(alice.address, p, 1n)).to.be.revertedWithCustomError(arena, 'RunActive');
+      await arena.connect(agent).endRun(alice.address);
+
+      // A stranger, or a bot linked on an unregistered pool, cannot.
+      await expect(arena.connect(bob).withdrawCreditFor(alice.address, p, 1n)).to.be.revertedWithCustomError(arena, 'NotAuthorized');
+      await fakePool.setOperator(alice.address, bob.address, PLACE_ORDER_FOR, true);
+      await expect(
+        arena.connect(bob).withdrawCreditFor(alice.address, await fakePool.getAddress(), 1n),
+      ).to.be.revertedWithCustomError(arena, 'NotAuthorized');
+
+      // The STT goes to the player; the bot that asked gets nothing.
+      await expect(arena.connect(agent).withdrawCreditFor(alice.address, p, CREDIT)).to.changeEtherBalances(
+        [alice, agent, arena],
+        [CREDIT, 0n, -CREDIT],
+      );
+      expect(await arena.credit(alice.address)).to.equal(0n);
+    });
+
     it('takes top-ups from anyone, and a linked bot funds a run that only the player can withdraw', async function () {
       await arena.connect(bob).deposit(alice.address, { value: CREDIT });
       expect(await arena.credit(alice.address)).to.equal(CREDIT);
