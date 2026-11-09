@@ -1,7 +1,7 @@
 # DreamArena Perps demo recording script
 
 A screen-recorded walkthrough of the live app, about 3 to 4 minutes after editing.
-It shows a player connecting their own wallet, all three games, a real trade scored on-chain in the same block, the player paying for their own callbacks, the agent and its limits, and the proof on the explorer.
+It shows a player bringing their own dreamDEX wallet through a bot they link, all three games, a real trade scored on-chain in the same block, the player paying for their own callbacks, the agent and its limits, and the proof on the explorer.
 
 Live app: https://dreamarena-perps.vercel.app
 Explorer: https://explorer.testnet.somnia.network/tokyo
@@ -19,15 +19,17 @@ Keep recording through the waits and cut them in editing.
 
 ## Before you press record
 
-1. **Use your Perps Arena wallet** (`0x85f9…6c2b`) in your browser wallet extension.
-   It holds the paper USDso margin and 35 STT, plenty for gas and run credit.
-   The arena (`0xd87C…EEa7`) holds its own 33 STT bond; you do not need to fund it.
-2. **Start flat.** Connect once before recording: on the Arena tab, Positions should say "Flat everywhere."
-   If anything is open, close it, and end any active run with End run.
-   It is fine if the run panel already shows a little callback credit; that wallet has some left over from testing, and it is yours.
+1. **Set up your bot once, before recording** (or record it as scene 2, it takes a minute):
+   on the Arena tab choose **dreamDEX wallet**, click **Create bot**, and copy its address.
+   In dreamDEX, open Wallet 1 (`0xE932…A73A`), then **Bot access**, **Link a bot**, paste the address, and allow Perps on every market.
+   Use **Top up** on that bot to give it about 1 STT.
+   Then unlink the older bot `0x95…b8E6` there; its key also sits in this project's env files.
+2. **Start flat.** Back in the app, paste Wallet 1's address and click **Check link and play**.
+   Positions should say "Flat everywhere"; close anything open and end any active run.
+   The arena (`0xf9ed…2667`) holds its own 33 STT bond; you do not need to fund it.
 3. **Browser.** Use a clean window about 1280 by 800, zoom at 100%, bookmarks bar hidden, and other tabs closed.
    Open a second tab on the explorer, ready for the proof scene.
-4. **Disconnect before you record** (wallet button in the header, then Disconnect), so the take starts from what a visitor sees.
+4. **Stop playing before you record** (the bot chip in the header, then Stop playing), so the take starts from what a visitor sees. The bot key stays in the browser.
 5. **Recorder.** Use QuickTime or OBS on the browser window only, at 30 fps, with the mic on if you narrate live.
    You can also record silently and add voiceover later using the lines below.
 6. **Pick one market for the whole demo:** ETH.
@@ -62,20 +64,19 @@ The times are for the edited video.
 
 ---
 
-### Scene 2. Connect a wallet (0:20 to 0:40)
+### Scene 2. Bring your dreamDEX wallet (0:20 to 0:45)
 
 **Do**
 
-1. The Arena tab shows **Play with your own wallet** and its three steps: connect, get test STT, get paper USDso on dreamDEX.
-2. Click **Connect wallet to play** and approve in your wallet.
-   If the wallet asks to add or switch to Somnia Tokyo, approve that too.
-3. Point at the header: your address and STT balance, and the **Bond** pill.
-4. Point at the five tabs: Arena, Agent, Leaderboard, Profile, Monitor.
+1. The Arena tab shows **Play with your own account**, on the **dreamDEX wallet** tab: create bot, link it in dreamDEX, give it gas, play.
+2. Point at step 1: the bot address, made in this browser. Step 3 shows its gas in green.
+3. Paste Wallet 1's address and click **Check link and play**. The toast says "Bot linked."
+4. Point at the header: the bot chip with your wallet and its gas, and the **Bond** pill.
 
 **Say**
 
-> Anyone can play with their own wallet. I connect, and the app switches me to Somnia Tokyo.
-> I sign my own runs and orders; the app never holds a key.
+> Your dreamDEX paper money lives in dreamDEX's own wallet, so DreamArena plays it through a bot you link.
+> The bot's key was made in this browser and never leaves it. dreamDEX lets it trade for me, never withdraw.
 > This bond is what Reactivity needs the arena to hold. Players pay for their own callbacks, so it is never spent.
 
 **Check:** the trade ticket and the Start a run buttons are enabled.
@@ -97,7 +98,7 @@ Survivor needs an open position before the run starts, so the trade comes first.
 4. **Positions** now shows the ETH long with uPnL and Liq.
 5. In **Start a run**, choose **Survivor**, market **ETH**, and Survive for **5 min**.
    Point at the **Callback credit** line and the note under it: starting deposits up to 0.05 STT of credit, billed per callback, and what is left stays yours.
-6. Click **Start Survivor**, approve in your wallet, and wait for the toast "Survivor run started: Subscriptions are live for your wallet."
+6. Click **Start Survivor** and wait for the toast "Survivor run started: Subscriptions are live for your wallet."
 7. The run card shows a countdown under "Survive for," and your **Callback credit** at the bottom.
    Scroll down to **Your run, on-chain**: the "Started a Survivor run on ETH" row is there.
 
@@ -258,8 +259,8 @@ Show the start, the "Boss health" bar, and ending the run, unless you want to pl
 
 **Do**
 
-1. Back on **Arena**, with no run active, click **Withdraw** on the Callback credit line and approve.
-   The credit goes to 0 and your wallet's STT goes up by the same amount.
+1. Back on **Arena**, with no run active, click **Withdraw** on the Callback credit line.
+   The credit goes to 0, and the STT lands in your dreamDEX wallet, not the bot.
 2. Open **Leaderboard** once more: your Survived and Best streak counts have gone up.
 3. Optional: end on the landing page or on the repo page.
 
@@ -275,7 +276,7 @@ Show the start, the "Boss health" bar, and ending the run, unless you want to pl
 
 - Cut every 10 to 20 second write wait down to about 1 second, or speed it up 8x, but keep the toast landing in shot.
 - Zoom in during editing (about 150%) on four things: the explorer block numbers in scenes 4 and 8, the agent's rejection message in scene 6, "Deadline callback settled the run" in scene 7, and the credit withdrawal in scene 10.
-- Every wallet approval pops up a window; cut those down to a beat, but show the first one so viewers see you sign.
+- The bot signs without pop-ups, so the waits are only the testnet's 10 to 20 seconds per write; cut them down.
 - If the Survivor wait goes over 5 minutes in the raw take, cut it down. A clock graphic or a quick "5 minutes later" card is enough.
 - Export H.264 at 1920 by 1080 if the window allows it, or upscale the 1280-wide recording.
   Keep the file under 512 MB for X; DoraHacks takes a YouTube or Loom link.

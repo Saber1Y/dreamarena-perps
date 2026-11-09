@@ -23,13 +23,14 @@ Built for the [dreamDEX Perps Builder Bounty](https://dorahacks.io/hackathon/dre
 | Profile | Any player's on-chain stats, achievements and recent activity |
 | Monitor | Arena vitals and every Reactivity callback as it lands, each with the trade that fired it and a same-block check |
 
-Anyone can play with their own wallet.
-Connect any browser wallet, and the app adds and switches to Somnia Tokyo.
-The player signs their own `startRun`, orders and withdrawals; the server only plans each order with the agent's code (book, tick, lot, slippage, dreamDEX's margin check) and hands back the transaction to sign.
-A player needs a little STT for gas and run credit ([faucet](https://explorer.testnet.somnia.network/tokyo/faucet)) and paper USDso margin, which dreamDEX grants to wallets that join its [Perps Arena](https://app.testnet.dreamdex.io/competition).
+Anyone can play, and nobody but the player holds a key.
+The server only plans each order with the agent's code (book, tick, lot, slippage, dreamDEX's margin check) and hands back the transaction to sign; it signs nothing.
+There are two ways in:
 
-The operator console is a second way in: a passphrase unlocks trading one linked Perps Arena wallet through the bot, under the perps agent's limits.
-Server routes hold the bot key; it never reaches the browser.
+- **A dreamDEX wallet, through a bot you link.** dreamDEX keeps paper USDso in its in-app wallet, a smart account that only trades through bots linked with Link a Bot. The app makes a bot key in the player's browser and keeps it only there; the player links it in dreamDEX, gives it a little STT for gas, and plays. The bot calls `startRunFor`, `placeOrderFor` and `withdrawCreditFor` for the wallet; dreamDEX's link lets it trade, never withdraw.
+- **A browser wallet** (MetaMask and the like) that holds its own margin plays as itself: connect, and the app adds and switches to Somnia Tokyo.
+
+Players get STT from the [faucet](https://explorer.testnet.somnia.network/tokyo/faucet) and paper USDso by joining dreamDEX's [Perps Arena](https://app.testnet.dreamdex.io/competition).
 
 Run it:
 
@@ -41,20 +42,18 @@ cd mcp-server && npm install
 cd frontend && npm install && cp .env.local.example .env.local
 ```
 
-For the operator console, fill in `PRIVATE_KEY`, `OWNER_ADDRESS` and `CONSOLE_PASSPHRASE` in `frontend/.env.local`, then:
+The app needs no secrets; `frontend/.env.local` is only for optional settings.
 
 ```bash
 cd frontend && npm run dev
 ```
-
-Without those three the console is off, and players still play with their own wallets.
 
 ### Deploying
 
 The live app runs on Vercel from the repository root, with `frontend` as the Root Directory so its server routes can import `mcp-server/src` and `contracts/deployments`.
 `frontend/vercel.json` also installs `mcp-server`'s dependencies.
 Functions run in Tokyo (`hnd1`), next to the Hideki RPC.
-`PRIVATE_KEY`, `OWNER_ADDRESS` and `CONSOLE_PASSPHRASE` are sensitive environment variables in the Vercel project; `.vercelignore` keeps every env and MCP config file out of the upload.
+The deployment holds no keys; `.vercelignore` keeps every env and MCP config file out of the upload anyway.
 
 ```bash
 vercel deploy --prod
@@ -84,16 +83,31 @@ Each player pays for their own callbacks:
 - Starting a run deposits gas credit, at least `minRunCredit` (0.05 STT, about ten of the heaviest callbacks seen or sixty typical ones).
 - Each callback measures its own gas and charges it to the player it served, at the transaction's gas price.
 - When what is left could not pay for one more heavy callback, the run ends itself in that callback and unsubscribes, so a player can never spend the bond or anyone else's credit.
-- Unused credit is the player's to withdraw between runs; `withdrawNative` lets the owner take only the bond, never credit.
+- Unused credit is the player's to withdraw between runs, or their linked bot's to send back to them with `withdrawCreditFor`; either way it only goes to the player. `withdrawNative` lets the owner take only the bond, never credit.
 
 Metering was calibrated against real receipts.
 With 60,000 gas of overhead, two callbacks were charged 57,572 and 57,575 gas less than they cost, so `setCharging` raised it to 130,000 ([`0xd0aeb417…`](https://explorer.testnet.somnia.network/tokyo/tx/0xd0aeb41716ca163519f2dd84812ac67d3278d6c692ece1bddbc669c6fa7d5ed3)).
 The next two callbacks were charged 12,428 gas more than their receipts, about 0.00007 STT each, which stays in the bond.
 
-Deployed on Hideki (chain 50383): [`0xd87C0477205aF17C8F33B1481f65c6d3F3B4EEa7`](https://explorer.testnet.somnia.network/tokyo/address/0xd87C0477205aF17C8F33B1481f65c6d3F3B4EEa7).
+Deployed on Hideki (chain 50383): [`0xf9ed11860D814BD688bB497df912Fc41fD832667`](https://explorer.testnet.somnia.network/tokyo/address/0xf9ed11860D814BD688bB497df912Fc41fD832667).
 It keeps an on-chain player list, so the leaderboard reads state instead of scanning logs.
 
-On that address, a fresh wallet played through the app's wallet flow, with credit in and out:
+On that address, a dreamDEX in-app wallet played a Streak run through a bot linked in dreamDEX and held in the browser, start to refund:
+
+| What | Transaction |
+| --- | --- |
+| `startRunFor` from the bot, with 0.05 STT of credit for the wallet | [`0x02a9a261…`](https://explorer.testnet.somnia.network/tokyo/tx/0x02a9a2618af8d056425e4bae4cfabd0428aa6740f3f098a19557d8e825e9dedf) |
+| `placeOrderFor`: open ETH long, block 45,700,898 | [`0x9e27b6d2…`](https://explorer.testnet.somnia.network/tokyo/tx/0x9e27b6d2dfe689ce6e71ffb85c20eae6d449ec952ac18e837b814c1a11fa3e03) |
+| Its callbacks, same block, billed to the wallet's credit | [`0x3a581d65…`](https://explorer.testnet.somnia.network/tokyo/tx/0x3a581d6577385e6b1bc169b5a6a784f986c5a277872ddcf5479846a983c6836f), [`0xaa33f0ab…`](https://explorer.testnet.somnia.network/tokyo/tx/0xaa33f0ab7812bd8931fe5c8fda982d03c83221163a5d57b026bd6411212c93bf) |
+| `placeOrderFor`: close, block 45,701,180 | [`0x6e40cf2a…`](https://explorer.testnet.somnia.network/tokyo/tx/0x6e40cf2a7775c68bd3f49892845ad4d53b127e43a566b9b1fab65fb04a83d8e5) |
+| Its callback, same block, scores a win (+0.024641 USDso) | [`0xeb9c91ad…`](https://explorer.testnet.somnia.network/tokyo/tx/0xeb9c91adaf348f017438e43ba0a324f8ba025b155a7d6cbcb32f685c87e9d324) |
+| `withdrawCreditFor`: the 0.0408 STT left goes back to the wallet | [`0xb0d12b54…`](https://explorer.testnet.somnia.network/tokyo/tx/0xb0d12b545acab21badd7587f94802ad5df469a57b2c0bd74efd31b7e0930adeb) |
+
+Each callback was charged slightly more gas than its receipt used (565,001 for 552,573; 165,107 for 152,679; 797,918 for 785,484), so the bond only grows.
+
+The previous deployment, [`0xd87C0477…`](https://explorer.testnet.somnia.network/tokyo/address/0xd87C0477205aF17C8F33B1481f65c6d3F3B4EEa7), had the same billing without `withdrawCreditFor`; it is retired and its bond moved here.
+0.0476 STT of credit stays in it for a dreamDEX wallet that cannot call `withdrawCredit`, which is why linked bots can now return credit.
+On it, a fresh browser wallet played with credit in and out:
 
 | What | Transaction |
 | --- | --- |
@@ -102,14 +116,14 @@ On that address, a fresh wallet played through the app's wallet flow, with credi
 | `endRun` | [`0x83d78614…`](https://explorer.testnet.somnia.network/tokyo/tx/0x83d78614a0e26cbdbd3806070451b12fdf4b74c04c104033b03192c179fdae38) |
 | `withdrawCredit`, all 0.1 STT back | [`0xea07f78b…`](https://explorer.testnet.somnia.network/tokyo/tx/0xea07f78bdaf1291a63dd9c1432d989cc61f2fbf3af2c517a67d32b1c55c03a28) |
 
-And a Streak run through the operator console, each callback in its trade's own block and billed to the player:
+And a Streak run through a linked bot, each callback in its trade's own block and billed to the player:
 
 | What | Trade | Callback, same block |
 | --- | --- | --- |
 | Open ETH long, block 39,770,483 | [`0xb8dc9e88…`](https://explorer.testnet.somnia.network/tokyo/tx/0xb8dc9e8878858ab64a9d16a052769c232f04c75d23f35dabcc5ede7da88f8544) | [`0x3c9d5082…`](https://explorer.testnet.somnia.network/tokyo/tx/0x3c9d50828ed0417ccc8de82e665b283afdd2b651008420503b86725bd7d43dbd), charged 0.00099 STT |
 | Close, block 39,770,535: a losing trade ends the run | [`0x23929351…`](https://explorer.testnet.somnia.network/tokyo/tx/0x23929351989a747442eb3d87ec1f27524664baebc35ad86a19b7f7ed46390c04) | [`0xbc1145bf…`](https://explorer.testnet.somnia.network/tokyo/tx/0xbc1145bf24aab8685301c4ac2d4b6c449f3958721e07f96f1538cc9f526f0842), charged 0.00139 STT |
 
-The previous deployment, [`0xc96B0891…`](https://explorer.testnet.somnia.network/tokyo/address/0xc96B089140EfA3447fC238AaE0Af30753C0c47b6), paid every callback from one shared balance; it is retired and its STT moved to the new bond.
+The deployment before that, [`0xc96B0891…`](https://explorer.testnet.somnia.network/tokyo/address/0xc96B089140EfA3447fC238AaE0Af30753C0c47b6), paid every callback from one shared balance; it is retired and its STT moved to the bond.
 A Streak run played through the app on it:
 
 | What | Transaction |
@@ -118,7 +132,7 @@ A Streak run played through the app on it:
 | One callback per fill, both in the order's own block 31,074,786 | [`0xe49ddc64…`](https://explorer.testnet.somnia.network/tokyo/tx/0xe49ddc6484a1fdb80a1879e4f3e616f0d07ac56609a895a4dc8fc95df247b615), [`0xcfdfa903…`](https://explorer.testnet.somnia.network/tokyo/tx/0xcfdfa903a30834b23e91832e3d48096e1d0ee75f0e36158b6a866570ad5e9ede) |
 | The close's callback, same block 31,075,535, scores a winning trade (+0.003031 USDso) | [`0xf577075f…`](https://explorer.testnet.somnia.network/tokyo/tx/0xf577075f77acbf49b1677c7a7581837f92f21f9d19a1aa8f7197311cfee6177e) |
 
-The deployment before it, [`0xc9157b64…`](https://explorer.testnet.somnia.network/tokyo/address/0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17), also proved a Survivor run settled by its scheduled callback at the deadline second ([`0xc6baa36c…`](https://explorer.testnet.somnia.network/tokyo/tx/0xc6baa36ce1f2c84fc92dce099f39a75cfa4253d3d27d2b4940f130d571e7cd6d)); the scoring code is unchanged since.
+An earlier one, [`0xc9157b64…`](https://explorer.testnet.somnia.network/tokyo/address/0xc9157b642c36CDde8C8a1BA4616a4e76010EFF17), also proved a Survivor run settled by its scheduled callback at the deadline second ([`0xc6baa36c…`](https://explorer.testnet.somnia.network/tokyo/tx/0xc6baa36ce1f2c84fc92dce099f39a75cfa4253d3d27d2b4940f130d571e7cd6d)); the scoring code is unchanged since.
 
 Test and deploy:
 
