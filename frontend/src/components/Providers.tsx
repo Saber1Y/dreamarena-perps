@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/toast';
+import { LinkedBotProvider } from '@/lib/linkedBot';
 import { WalletProvider } from '@/lib/wallet';
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -16,7 +17,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
-        <ToastProvider>{children}</ToastProvider>
+        <LinkedBotProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </LinkedBotProvider>
       </WalletProvider>
     </QueryClientProvider>
   );

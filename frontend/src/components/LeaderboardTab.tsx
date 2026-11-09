@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { useLeaderboard, useSession } from '@/hooks/api';
+import { useActor, useLeaderboard } from '@/hooks/api';
 import { Avatar } from '@/components/Avatar';
 import type { LeaderRow } from '@/lib/types';
 import { pnl, pnlTone, shortAddr } from '@/lib/format';
@@ -51,7 +51,7 @@ const BOARDS = [
 
 export function LeaderboardTab() {
   const board = useLeaderboard();
-  const session = useSession();
+  const actor = useActor();
   const [id, setId] = useState<(typeof BOARDS)[number]['id']>('streak');
   const active = BOARDS.find((b) => b.id === id)!;
 
@@ -59,7 +59,7 @@ export function LeaderboardTab() {
     () => [...(board.data ?? [])].sort((a, b) => active.value(b) - active.value(a) || b.stats.runs - a.stats.runs),
     [board.data, active],
   );
-  const me = session.data?.owner?.toLowerCase();
+  const me = actor.address?.toLowerCase();
 
   return (
     <section className="surface overflow-hidden" aria-label="Leaderboard">

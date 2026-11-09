@@ -100,13 +100,6 @@ export interface FeedView {
   head: number;
 }
 
-export interface SessionView {
-  configured: boolean;
-  unlocked: boolean;
-  owner: string | null;
-  bot: string | null;
-}
-
 export interface Position {
   symbol: string;
   side: 'long' | 'short';

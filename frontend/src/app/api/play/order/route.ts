@@ -6,11 +6,12 @@ import type { OrderTx, PreviewView } from '@/lib/types';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// A player trading their own wallet: the server plans the order with the same
+// A player trading their own account: the server plans the order with the same
 // code the agent uses (book, tick, lot, slippage), checks dreamDEX's own margin
-// limit for that account, and hands back the `placeOrder` transaction. The
-// player's wallet signs and sends it; this server never holds their key.
-// Nothing here can move funds, so it needs no session.
+// limit for that account, and hands back the transaction to sign. A browser
+// wallet signs `placeOrder`; a bot the player linked in dreamDEX, held only in
+// the player's browser, signs `placeOrderFor`. This server never holds a key,
+// and nothing here can move funds, so it needs no session.
 
 interface OrderRequest {
   player?: unknown;
@@ -21,6 +22,8 @@ interface OrderRequest {
   percent?: unknown;
   /** Preview only: what the ticket shows before the player commits. */
   dryRun?: unknown;
+  /** Who signs: the player's own wallet (default) or their linked bot. */
+  signer?: unknown;
 }
 
 export async function POST(req: Request) {
@@ -65,7 +68,7 @@ export async function POST(req: Request) {
     if (body.dryRun === true) return NextResponse.json(preview);
     if (capacity) return NextResponse.json({ error: capacity }, { status: 422 });
 
-    const tx = orderTransaction(plan);
+    const tx = orderTransaction(plan, body.signer === 'linked-bot' ? 'linked-bot' : 'wallet');
     const sizeBefore = plan.account.positions.find((p) => p.symbol === plan.market.symbol)?.sizeRaw ?? 0n;
     const result: OrderTx = {
       to: tx.to,

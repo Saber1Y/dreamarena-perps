@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, Copy, Play, ShieldCheck, Terminal } from 'lucide-react';
-import { callTool, useAgentStatus, useSession } from '@/hooks/api';
+import { callTool, useAgentStatus } from '@/hooks/api';
 import { addrUrl, shortAddr } from '@/lib/format';
 
 interface ToolDef {
@@ -56,7 +56,6 @@ let seq = 0;
 
 export function AgentTab() {
   const status = useAgentStatus();
-  const session = useSession();
   const [tool, setTool] = useState<ToolDef>(READ_TOOLS[2]);
   const [symbol, setSymbol] = useState('ETH');
   const [side, setSide] = useState<'long' | 'short'>('long');
@@ -94,23 +93,32 @@ export function AgentTab() {
             </span>
             <div>
               <h2 className="text-lg font-semibold leading-tight">The perps agent</h2>
-              <p className="text-xs text-text-muted">An MCP server. This app trades through the same code.</p>
+              <p className="text-xs text-text-muted">An MCP server you run with your own bot key. The app plans orders with the same code.</p>
             </div>
           </div>
           {!s && <div className="skeleton mt-4 h-32 w-full" />}
           {s && (
             <dl className="mt-4 space-y-2.5 text-sm">
-              <div className="flex justify-between gap-3">
-                <dt className="text-text-muted">Trades</dt>
-                <dd className="num">
-                  <a href={addrUrl(s.trades)} target="_blank" rel="noopener noreferrer" className="hover:text-primary">{shortAddr(s.trades)}</a>
-                  {s.linkedWallet && <span className="badge-primary ml-2">linked wallet</span>}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-text-muted">Signs as</dt>
-                <dd className="num">{s.canTrade ? shortAddr(s.signer) : 'read-only'}</dd>
-              </div>
+              {s.canTrade ? (
+                <>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-text-muted">Trades</dt>
+                    <dd className="num">
+                      <a href={addrUrl(s.trades)} target="_blank" rel="noopener noreferrer" className="hover:text-primary">{shortAddr(s.trades)}</a>
+                      {s.linkedWallet && <span className="badge-primary ml-2">linked wallet</span>}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-text-muted">Signs as</dt>
+                    <dd className="num">{shortAddr(s.signer)}</dd>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-text-muted">Trades</dt>
+                  <dd className="text-right">your dreamDEX wallet, through a bot you link</dd>
+                </div>
+              )}
               <div className="flex justify-between gap-3">
                 <dt className="text-text-muted">Markets it may open</dt>
                 <dd className="num">{s.limits.markets.join(', ')}</dd>
@@ -152,8 +160,8 @@ export function AgentTab() {
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
-          {session.data && !session.data.configured && (
-            <p className="mt-2 text-xs text-text-muted">This deployment has no bot key, so its own reads are all it can do.</p>
+          {s && !s.canTrade && (
+            <p className="mt-2 text-xs text-text-muted">This site holds no bot key and trades for nobody. Run the agent yourself, with a bot you linked in dreamDEX, to let it trade for you.</p>
           )}
         </section>
       </div>

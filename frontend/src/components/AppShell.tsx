@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Activity, Bot, Swords, Trophy, User, type LucideIcon } from 'lucide-react';
 import { Logo } from '@/components/Logo';
-import { ConsoleLock } from '@/components/ConsoleLock';
+import { LinkedBotButton } from '@/components/LinkedBotButton';
 import { WalletButton } from '@/components/WalletButton';
+import { useLinkedBot } from '@/lib/linkedBot';
 import { useArena } from '@/hooks/api';
 import { usd } from '@/lib/format';
 
@@ -40,6 +41,12 @@ function ArenaBond() {
   );
 }
 
+/** Who is playing: the dreamDEX wallet behind a linked bot, else a browser wallet. */
+function Player() {
+  const linked = useLinkedBot();
+  return linked.status === 'ready' ? <LinkedBotButton /> : <WalletButton />;
+}
+
 export function AppShell({ tab, onTab, children }: { tab: Tab; onTab: (t: Tab) => void; children: React.ReactNode }) {
   return (
     <div className="flex min-h-[100dvh] flex-col">
@@ -62,8 +69,7 @@ export function AppShell({ tab, onTab, children }: { tab: Tab; onTab: (t: Tab) =
           </div>
           <div className="flex items-center gap-2">
             <ArenaBond />
-            <ConsoleLock />
-            <WalletButton />
+            <Player />
           </div>
         </div>
 

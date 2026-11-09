@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDownRight, ArrowUpRight, ExternalLink, Flame, Fuel, Lock, ShieldCheck, Swords, Timer, Wallet } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Bot, Check, Copy, ExternalLink, Flame, Fuel, Lock, Swords, Timer, Wallet } from 'lucide-react';
 import {
   useAccount,
   useActor,
@@ -10,9 +10,9 @@ import {
   useArena,
   useFeed,
   useMarket,
+  useMarkets,
   usePreview,
   useRunAction,
-  useSession,
   useSttBalance,
   useTrade,
   type Actor,
@@ -24,6 +24,7 @@ import { BOSS_ROUNDS, SURVIVAL_CHOICES, type AccountView, type ArenaView, type G
 import { countdown, pnl, pnlTone, price, usd } from '@/lib/format';
 import { DREAMDEX_ARENA, FAUCET } from '@/lib/chain';
 import { useWallet } from '@/lib/wallet';
+import { useLinkedBot } from '@/lib/linkedBot';
 
 const GAME_COPY: Record<GameName, { title: string; rule: string; needs: string; icon: typeof Timer }> = {
   Survivor: {
@@ -82,21 +83,165 @@ function PlayButton({ className = 'btn-primary' }: { className?: string }) {
 function LockedHint() {
   return (
     <p className="flex items-center gap-1.5 text-xs text-text-muted">
-      <Lock className="h-3.5 w-3.5" /> Connect a wallet to trade and start runs.
+      <Lock className="h-3.5 w-3.5" /> Link a bot or connect a wallet to trade and start runs.
     </p>
   );
 }
 
-/** For a visitor: the three things a run needs, in order. */
-function JoinArena({ arena }: { arena: ArenaView | undefined }) {
+interface Step {
+  title: string;
+  body: React.ReactNode;
+  action: React.ReactNode;
+  done?: boolean;
+}
+
+function Steps({ steps }: { steps: Step[] }) {
+  return (
+    <ol className="mt-5 space-y-3">
+      {steps.map((step, i) => (
+        <li key={step.title} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border p-4">
+          <span className={`num flex h-7 w-7 shrink-0 items-center justify-center self-start rounded-full text-xs font-bold sm:self-center ${step.done ? 'bg-success text-white' : 'bg-elevated text-text-secondary'}`}>
+            {i + 1}
+          </span>
+          <div className="min-w-[200px] flex-1">
+            <p className="text-sm font-semibold">{step.title}</p>
+            <div className="mt-0.5 text-xs text-text-secondary">{step.body}</div>
+          </div>
+          {step.action}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      className="btn-secondary px-3 py-1.5 text-xs"
+      onClick={() =>
+        navigator.clipboard?.writeText(text).then(
+          () => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          },
+          () => undefined,
+        )
+      }
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied ? 'Copied' : label}
+    </button>
+  );
+}
+
+/**
+ * dreamDEX keeps paper USDso in its in-app wallet, which only trades through
+ * linked bots. So the player makes a bot here, links it there, and plays.
+ */
+function LinkBotSteps({ arena }: { arena: ArenaView | undefined }) {
+  const linked = useLinkedBot();
+  const toast = useToast();
+  const status = useAgentStatus();
+  const markets = useMarkets();
+  const gas = useSttBalance(linked.bot);
+  const [wallet, setWallet] = useState('');
+  const [checking, setChecking] = useState(false);
+  const minimum = arena ? arena.minRunCreditStt : 0.05;
+  // Enough for one run's credit and a few orders' gas ceilings.
+  const funded = gas.data !== undefined && gas.data >= minimum + 0.15;
+  const pool = markets.data?.find((m) => m.symbol === (status.data?.limits.markets[0] ?? 'ETH'))?.pool as `0x${string}` | undefined;
+
+  const check = async () => {
+    if (!pool) return;
+    setChecking(true);
+    try {
+      await linked.link(wallet, pool);
+      toast.push({ type: 'success', title: 'Bot linked', detail: 'You are playing as your dreamDEX wallet.' });
+    } catch (err) {
+      toast.push({ type: 'error', title: 'Not linked yet', detail: err instanceof Error ? err.message : 'The link check failed.' });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const steps: Step[] = [
+    {
+      title: 'Create your bot',
+      body: linked.bot ? (
+        <>
+          <span className="num font-semibold text-text-primary">{linked.bot}</span>
+          <br />
+          Its key lives only in this browser. Linked in dreamDEX, it can trade for your wallet, never withdraw.
+        </>
+      ) : (
+        'A trading key made in this browser and kept only here. No server ever sees it.'
+      ),
+      action: linked.bot ? <CopyButton text={linked.bot} label="Copy address" /> : (
+        <button className="btn-primary px-4 py-2 text-sm" onClick={linked.create}>
+          <Bot className="h-4 w-4" /> Create bot
+        </button>
+      ),
+      done: Boolean(linked.bot),
+    },
+    {
+      title: 'Link it in dreamDEX',
+      body: 'In dreamDEX, open your wallet, then Bot access, then Link a bot. Paste the bot address and allow Perps on every market.',
+      action: (
+        <a href="https://app.testnet.dreamdex.io" target="_blank" rel="noopener noreferrer" className="btn-secondary px-4 py-2 text-sm">
+          dreamDEX <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ),
+    },
+    {
+      title: 'Give it gas',
+      body: (
+        <>
+          The bot pays its own gas and your run&apos;s {usd(minimum, 2)} STT callback credit. Use Top up on the bot in dreamDEX&apos;s Bot access, or send it
+          STT. {linked.bot && gas.data !== undefined && (
+            <span className={`num font-semibold ${funded ? 'text-success' : 'text-warning'}`}>It holds {usd(gas.data, 4)} STT.</span>
+          )}
+        </>
+      ),
+      action: null,
+      done: funded,
+    },
+    {
+      title: 'Play as your dreamDEX wallet',
+      body: (
+        <div className="mt-1.5 flex flex-wrap gap-2">
+          <label htmlFor="dreamdex-wallet" className="sr-only">
+            Your dreamDEX wallet address
+          </label>
+          <input
+            id="dreamdex-wallet"
+            value={wallet}
+            onChange={(e) => setWallet(e.target.value.trim())}
+            placeholder="Your dreamDEX wallet, 0x…"
+            className="input num min-w-0 flex-1 text-xs"
+            spellCheck={false}
+          />
+          <button className="btn-primary px-4 py-2 text-sm" disabled={!linked.bot || !wallet || !pool || checking} onClick={check}>
+            {checking ? 'Checking the link…' : 'Check link and play'}
+          </button>
+        </div>
+      ),
+      action: null,
+    },
+  ];
+  return <Steps steps={steps} />;
+}
+
+/** A browser wallet that holds its own paper USDso plays as itself. */
+function WalletSteps({ arena }: { arena: ArenaView | undefined }) {
   const wallet = useWallet();
   const connected = wallet.status === 'ready';
   const minimum = arena ? usd(arena.minRunCreditStt, 2) : '0.05';
-  const steps = [
+  const steps: Step[] = [
     {
       title: 'Connect a wallet on Somnia Tokyo',
       body: 'Any browser wallet. You sign your own runs and orders; this app never holds a key.',
       action: connected ? null : <PlayButton className="btn-primary px-4 py-2 text-sm" />,
+      done: connected,
     },
     {
       title: 'Get test STT',
@@ -117,27 +262,39 @@ function JoinArena({ arena }: { arena: ArenaView | undefined }) {
       ),
     },
   ];
+  return <Steps steps={steps} />;
+}
+
+/** For a visitor: two ways in, both signed by the player and nobody else. */
+function JoinArena({ arena }: { arena: ArenaView | undefined }) {
+  const [path, setPath] = useState<'dreamdex' | 'wallet'>('dreamdex');
+  const tab = (id: typeof path, label: string) => (
+    <button
+      role="tab"
+      aria-selected={path === id}
+      onClick={() => setPath(id)}
+      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${path === id ? 'bg-surface text-text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'}`}
+    >
+      {label}
+    </button>
+  );
   return (
     <section className="surface p-5" aria-label="Play">
-      <h2 className="text-lg font-semibold">Play with your own wallet</h2>
+      <h2 className="text-lg font-semibold">Play with your own account</h2>
       <p className="mt-1 max-w-[62ch] text-sm text-text-secondary">
         Pick a challenge, trade real dreamDEX perps, and Somnia Reactivity scores you in the block your position changes. You pay for your own callbacks
-        from a small STT credit, and whatever is left is yours to withdraw.
+        from a small STT credit, and whatever is left is yours to withdraw. Nothing here holds your keys.
       </p>
-      <ol className="mt-5 space-y-3">
-        {steps.map((step, i) => (
-          <li key={step.title} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border p-4">
-            <span className={`num flex h-7 w-7 shrink-0 items-center justify-center self-start rounded-full text-xs font-bold sm:self-center ${i === 0 && connected ? 'bg-success text-white' : 'bg-elevated text-text-secondary'}`}>
-              {i + 1}
-            </span>
-            <div className="min-w-[200px] flex-1">
-              <p className="text-sm font-semibold">{step.title}</p>
-              <p className="mt-0.5 text-xs text-text-secondary">{step.body}</p>
-            </div>
-            {step.action}
-          </li>
-        ))}
-      </ol>
+      <div className="mt-4 inline-flex rounded-lg bg-elevated p-0.5" role="tablist" aria-label="How you play">
+        {tab('dreamdex', 'dreamDEX wallet')}
+        {tab('wallet', 'Browser wallet')}
+      </div>
+      <p className="mt-2 text-xs text-text-muted">
+        {path === 'dreamdex'
+          ? "Your paper USDso is in dreamDEX's in-app wallet. It trades through a bot you link, made in this browser."
+          : 'For a wallet like MetaMask that holds its own USDso margin on dreamDEX.'}
+      </p>
+      {path === 'dreamdex' ? <LinkBotSteps arena={arena} /> : <WalletSteps arena={arena} />}
     </section>
   );
 }
@@ -148,7 +305,7 @@ function Credit({ actor, player, arena, active }: { actor: Actor; player: Player
   const toast = useToast();
   const credit = player.creditStt ?? 0;
   const low = active && credit < arena.minRunCreditStt * 0.4;
-  const own = actor.mode === 'wallet';
+  const own = actor.mode !== 'none';
   const run = (input: { action: 'deposit'; amountStt: number } | { action: 'withdraw' }, done: string) =>
     runAction.mutate(input, {
       onSuccess: (r) => toast.push({ type: 'success', title: done, href: r.explorer }),
@@ -386,12 +543,14 @@ function StartRun({
   const [seconds, setSeconds] = useState(SURVIVAL_CHOICES[0].seconds);
   const runAction = useRunAction(actor);
   const toast = useToast();
-  const stt = useSttBalance(actor.mode === 'wallet' ? actor.address : null);
+  // Whoever signs pays the credit and gas: the wallet itself, or the linked bot.
+  const payer = actor.mode === 'wallet' ? actor.address : actor.mode === 'bot' ? actor.bot : null;
+  const stt = useSttBalance(payer);
   const playing = actor.mode !== 'none';
   const credit = player?.creditStt ?? 0;
   const deposit = Math.max(0, arena.minRunCreditStt - credit);
   // Starting also pays the transaction's own gas, a few thousandths of an STT.
-  const short = actor.mode === 'wallet' && stt.data !== undefined && stt.data < deposit + 0.02;
+  const short = payer !== null && stt.data !== undefined && stt.data < deposit + 0.02;
 
   const chosen = symbol ?? markets[0] ?? null;
   const position = account?.positions.find((p) => p.symbol === chosen);
@@ -488,7 +647,7 @@ function StartRun({
           )}
           {short && (
             <p className="text-xs font-medium text-warning">
-              Your wallet holds {usd(stt.data, 4)} STT, not enough for the credit and gas.{' '}
+              {actor.mode === 'bot' ? 'Your bot' : 'Your wallet'} holds {usd(stt.data, 4)} STT, not enough for the credit and gas.{' '}
               <a href={FAUCET} target="_blank" rel="noopener noreferrer" className="underline">
                 Get STT
               </a>
@@ -513,7 +672,7 @@ function StartRun({
             {runAction.isPending ? 'Opening subscriptions…' : deposit > 0 ? `Start ${game} · ${usd(deposit, 2)} STT` : `Start ${game}`}
           </button>
         ) : (
-          <PlayButton />
+          <LockedHint />
         )}
       </div>
     </section>
@@ -560,9 +719,9 @@ function TradeTicket({ actor, runSymbol }: { actor: Actor; runSymbol: string | n
     <section className="surface p-5" aria-label="Trade">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Trade</h2>
-        {actor.mode === 'console' ? (
-          <span className="badge-muted" title="Orders go through the perps agent's planner and limits.">
-            <ShieldCheck className="h-3 w-3" /> agent limits
+        {actor.mode === 'bot' ? (
+          <span className="badge-muted" title="Market orders (IOC) your linked bot places for your dreamDEX wallet, sized against its margin. The bot can never withdraw.">
+            <Bot className="h-3 w-3" /> your bot
           </span>
         ) : (
           <span className="badge-muted" title="Market orders (IOC) from your own wallet, sized against your dreamDEX margin.">
@@ -616,7 +775,7 @@ function TradeTicket({ actor, runSymbol }: { actor: Actor; runSymbol: string | n
       </div>
 
       <div className="mt-4 min-h-[72px] rounded-xl border border-border p-3 text-xs">
-        {!playing && <p className="text-text-muted">Connect a wallet to see the quantity, worst price and liquidation price before you trade.</p>}
+        {!playing && <p className="text-text-muted">Link a bot or connect a wallet to see the quantity, worst price and liquidation price before you trade.</p>}
         {preview.isFetching && !preview.data && <div className="skeleton h-12 w-full" />}
         {preview.error && <p className="text-danger">{preview.error.message}</p>}
         {preview.data && (
@@ -659,7 +818,7 @@ function TradeTicket({ actor, runSymbol }: { actor: Actor; runSymbol: string | n
             {trade.isPending ? (actor.mode === 'wallet' ? 'Confirm in your wallet…' : 'Sending…') : `${side === 'long' ? 'Long' : 'Short'} ${chosen ?? ''}`}
           </button>
         ) : (
-          <PlayButton className="btn-primary w-full" />
+          <LockedHint />
         )}
       </div>
     </section>
@@ -749,14 +908,14 @@ function Positions({ actor, account, loading, error }: { actor: Actor; account: 
 
 export function ArenaTab() {
   const actor = useActor();
-  const session = useSession();
   const wallet = useWallet();
+  const linked = useLinkedBot();
   const arena = useArena(actor.address);
   const account = useAccount(actor);
   const feed = useFeed();
   const now = useNow();
-  // Until the wallet and session are known, the visitor's state would be a guess.
-  const deciding = wallet.status === 'loading' || !session.data;
+  // Until the wallet and the bot are known, the visitor's state would be a guess.
+  const deciding = wallet.status === 'loading' || linked.status === 'loading';
   const owner = actor.address ? arena.data?.player?.address : undefined;
   const mine = useMemo(
     () => (feed.data?.events ?? []).filter((e) => owner && e.player.toLowerCase() === owner.toLowerCase()).slice(0, 8),

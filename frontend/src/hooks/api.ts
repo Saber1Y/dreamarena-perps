@@ -1,9 +1,10 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { decodeEventLog, getAddress, parseAbi, type Address, type Hex } from 'viem';
+import { decodeEventLog, getAddress, parseAbi, type Address, type ContractFunctionName, type Hex } from 'viem';
 import { PERPS_ARENA_ABI } from '@/lib/abis';
 import { EXPLORER } from '@/lib/chain';
+import { useLinkedBot } from '@/lib/linkedBot';
 import { browserClient, useWallet, walletError } from '@/lib/wallet';
 import type {
   AccountView,
@@ -19,7 +20,6 @@ import type {
   OrderTx,
   PlayerView,
   PreviewView,
-  SessionView,
 } from '@/lib/types';
 import { GAMES } from '@/lib/types';
 
@@ -69,12 +69,9 @@ async function tool<T>(name: string, args: Record<string, unknown> = {}): Promis
 
 // --- Reads -------------------------------------------------------------------
 
-export const useSession = () =>
-  useQuery({ queryKey: ['session'], queryFn: () => getJson<SessionView>('/api/console/session'), staleTime: 30_000 });
-
 export const useArena = (player?: string | null) =>
   useQuery({
-    queryKey: ['arena', player ?? 'owner'],
+    queryKey: ['arena', player ?? 'none'],
     queryFn: () => getJson<{ arena: ArenaView; player: PlayerView | null }>(`/api/arena${player ? `?player=${player}` : ''}`),
     refetchInterval: 3_000,
   });
@@ -92,28 +89,36 @@ export const useLeaderboard = () =>
 // --- Who is playing -------------------------------------------------------------
 
 /**
- * A connected wallet plays as itself and signs its own transactions. Without
- * one, an unlocked operator console plays its linked wallet through the bot.
- * Otherwise nobody is playing in this browser and the arena is read-only.
+ * Who is playing in this browser. A dreamDEX wallet plays through the bot it
+ * linked, whose key lives only in this browser. A browser wallet (MetaMask and
+ * the like) plays as itself. Otherwise nobody is, and the arena is read-only.
+ * Either way the player signs; no server holds a key.
  */
-export type Actor = { mode: 'wallet'; address: Address } | { mode: 'console'; address: string } | { mode: 'none'; address: null };
+export type Actor =
+  | { mode: 'bot'; address: Address; bot: Address }
+  | { mode: 'wallet'; address: Address }
+  | { mode: 'none'; address: null };
 
 export function useActor(): Actor {
   const wallet = useWallet();
-  const session = useSession();
+  const linked = useLinkedBot();
+  if (linked.status === 'ready' && linked.player && linked.bot) return { mode: 'bot', address: linked.player, bot: linked.bot };
   if (wallet.status === 'ready' && wallet.address) return { mode: 'wallet', address: wallet.address };
-  if (session.data?.unlocked && session.data.owner) return { mode: 'console', address: session.data.owner };
   return { mode: 'none', address: null };
+}
+
+/** Whatever signs for the actor: their browser wallet, or the bot they linked. */
+function useSigner(actor: Actor) {
+  const wallet = useWallet();
+  const linked = useLinkedBot();
+  return actor.mode === 'bot' ? linked.walletClient : actor.mode === 'wallet' ? wallet.walletClient : null;
 }
 
 /** The actor's dreamDEX account: equity and positions. */
 export const useAccount = (actor: Actor) =>
   useQuery({
-    queryKey: ['account', actor.mode, actor.address],
-    queryFn: () =>
-      actor.mode === 'wallet'
-        ? getJson<AccountView>(`/api/play/account?player=${actor.address}`)
-        : tool<AccountView>('dreamarena_get_account'),
+    queryKey: ['account', actor.address],
+    queryFn: () => getJson<AccountView>(`/api/play/account?player=${actor.address}`),
     enabled: actor.mode !== 'none',
     refetchInterval: 5_000,
   });
@@ -145,14 +150,11 @@ export const useMarket = (symbol: string | null) =>
 export const useAgentStatus = () =>
   useQuery({ queryKey: ['agent-status'], queryFn: () => tool<AgentStatus>('dreamarena_status'), staleTime: 60_000 });
 
-/** A wallet's own order is checked against dreamDEX's margin; the console's against the agent's limits too. */
+/** The order as planned for the player's account, checked against dreamDEX's own margin. */
 export const usePreview = (actor: Actor, symbol: string | null, side: 'long' | 'short', notionalUsdso: number) =>
   useQuery({
-    queryKey: ['preview', actor.mode, actor.address, symbol, side, notionalUsdso],
-    queryFn: () =>
-      actor.mode === 'wallet'
-        ? send<PreviewView>('/api/play/order', 'POST', { player: actor.address, action: 'open', symbol, side, notionalUsdso, dryRun: true })
-        : tool<PreviewView>('dreamarena_preview_order', { symbol, side, notionalUsdso }),
+    queryKey: ['preview', actor.address, symbol, side, notionalUsdso],
+    queryFn: () => send<PreviewView>('/api/play/order', 'POST', { player: actor.address, action: 'open', symbol, side, notionalUsdso, dryRun: true }),
     enabled: actor.mode !== 'none' && Boolean(symbol) && notionalUsdso > 0,
     retry: false,
     staleTime: 3_000,
@@ -167,7 +169,7 @@ function useRefreshAfter() {
   };
 }
 
-// --- Signing with the player's own wallet ------------------------------------------
+// --- Signing for the player ----------------------------------------------------------
 
 const POSITION_UPDATED = parseAbi([
   'event PositionUpdated(address indexed account, address indexed perpPool, int128 newSize, uint128 avgEntryPrice, int256 realizedPnl, int256 entryFundingIndex)',
@@ -218,34 +220,21 @@ function settled(order: OrderTx, player: Address, receipt: Awaited<ReturnType<ty
   };
 }
 
-export function useUnlock() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (passphrase: string) => send<{ ok: true }>('/api/console/session', 'POST', { passphrase }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
-  });
-}
-
-export function useLock() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => send<{ ok: true }>('/api/console/session', 'DELETE'),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
-  });
-}
-
 export type TradeInput =
   | { action: 'open'; symbol: string; side: 'long' | 'short'; notionalUsdso: number }
   | { action: 'close'; symbol: string; percent?: number };
 
+const NOT_PLAYING = 'Connect a wallet or link a bot first.';
+
 export function useTrade(actor: Actor) {
   const refresh = useRefreshAfter();
-  const { walletClient } = useWallet();
+  const walletClient = useSigner(actor);
   return useMutation({
     mutationFn: async (input: TradeInput): Promise<Execution> => {
-      if (actor.mode === 'console') return send<Execution>('/api/console/trade', 'POST', input);
-      if (actor.mode !== 'wallet' || !walletClient?.account) throw new ApiError('Connect a wallet on Somnia Tokyo first.');
-      const order = await send<OrderTx>('/api/play/order', 'POST', { player: actor.address, ...input });
+      if (actor.mode === 'none' || !walletClient?.account) throw new ApiError(NOT_PLAYING);
+      // A linked bot places the order for the player's dreamDEX wallet.
+      const signer = actor.mode === 'bot' ? 'linked-bot' : 'wallet';
+      const order = await send<OrderTx>('/api/play/order', 'POST', { player: actor.address, signer, ...input });
       const tx = { account: walletClient.account, to: order.to as Address, data: order.data as Hex, gas: BigInt(order.gas) };
       try {
         // A dry run first: a mined revert carries no reason, a call does.
@@ -263,57 +252,58 @@ export function useTrade(actor: Actor) {
 export type RunInput =
   | { action: 'start'; game: GameName; symbol: string; survivalSeconds?: number }
   | { action: 'end' }
-  /** Wallet only: add credit to a run in progress. */
+  /** Add credit to a run in progress. */
   | { action: 'deposit'; amountStt: number }
-  /** Wallet only: take back unused credit between runs. */
+  /** Take back unused credit between runs; it always goes to the player's wallet. */
   | { action: 'withdraw' };
 
 export function useRunAction(actor: Actor) {
   const refresh = useRefreshAfter();
   const qc = useQueryClient();
-  const { walletClient } = useWallet();
+  const walletClient = useSigner(actor);
   return useMutation({
     mutationFn: async (input: RunInput): Promise<ArenaTx> => {
-      if (actor.mode === 'console') {
-        if (input.action !== 'start' && input.action !== 'end') throw new ApiError('Only the wallet itself can move its credit.');
-        return send<ArenaTx>('/api/console/run', 'POST', input);
-      }
-      if (actor.mode !== 'wallet' || !walletClient?.account) throw new ApiError('Connect a wallet on Somnia Tokyo first.');
+      if (actor.mode === 'none' || !walletClient?.account) throw new ApiError(NOT_PLAYING);
       const player = actor.address;
-      const arena = getAddress((await getJson<{ arena: ArenaView }>('/api/arena')).arena.address);
-      const read = <F extends 'credit' | 'minRunCredit'>(functionName: F) =>
-        functionName === 'credit'
-          ? browserClient.readContract({ address: arena, abi: PERPS_ARENA_ABI, functionName: 'credit', args: [player] })
-          : browserClient.readContract({ address: arena, abi: PERPS_ARENA_ABI, functionName: 'minRunCredit' });
+      const viaBot = actor.mode === 'bot';
+      const { arena: view, player: state } = await getJson<{ arena: ArenaView; player: PlayerView | null }>(`/api/arena?player=${player}`);
+      const arena = getAddress(view.address);
+      const credit = await browserClient.readContract({ address: arena, abi: PERPS_ARENA_ABI, functionName: 'credit', args: [player] });
+      const markets = await qc.fetchQuery({
+        queryKey: ['markets'],
+        queryFn: () => tool<{ count: number; markets: MarketView[] }>('dreamarena_list_markets').then((r) => r.markets),
+        staleTime: 60_000,
+      });
 
       let call;
       if (input.action === 'start') {
-        const markets = await qc.fetchQuery({
-          queryKey: ['markets'],
-          queryFn: () => tool<{ count: number; markets: MarketView[] }>('dreamarena_list_markets').then((r) => r.markets),
-          staleTime: 60_000,
-        });
         const market = markets.find((m) => m.symbol === input.symbol);
         if (!market) throw new ApiError(`No market ${input.symbol}.`);
-        const [credit, minimum] = await Promise.all([read('credit'), read('minRunCredit')]);
-        call = {
-          functionName: 'startRun' as const,
-          args: [GAMES.indexOf(input.game) + 1, getAddress(market.pool), BigInt(input.survivalSeconds ?? 0)] as const,
-          // Top the credit up to the minimum; anything already there counts.
-          value: minimum > credit ? minimum - credit : 0n,
-        };
+        const minimum = await browserClient.readContract({ address: arena, abi: PERPS_ARENA_ABI, functionName: 'minRunCredit' });
+        const run = [GAMES.indexOf(input.game) + 1, getAddress(market.pool), BigInt(input.survivalSeconds ?? 0)] as const;
+        // Top the credit up to the minimum; anything already there counts.
+        const value = minimum > credit ? minimum - credit : 0n;
+        call = viaBot
+          ? { functionName: 'startRunFor' as const, args: [player, ...run] as const, value }
+          : { functionName: 'startRun' as const, args: run, value };
       } else if (input.action === 'end') {
         call = { functionName: 'endRun' as const, args: [player] as const, value: 0n };
       } else if (input.action === 'deposit') {
         call = { functionName: 'deposit' as const, args: [player] as const, value: BigInt(Math.round(input.amountStt * 1e6)) * 10n ** 12n };
       } else {
-        const credit = await read('credit');
         if (credit === 0n) throw new ApiError('There is no credit to withdraw.');
-        call = { functionName: 'withdrawCredit' as const, args: [credit] as const, value: 0n };
+        // The bot proves its link on the pool the player last ran on.
+        const pool = getAddress(state?.run.pool ?? markets[0].pool);
+        call = viaBot
+          ? { functionName: 'withdrawCreditFor' as const, args: [player, pool, credit] as const, value: 0n }
+          : { functionName: 'withdrawCredit' as const, args: [credit] as const, value: 0n };
       }
 
+      // viem cannot type a call whose function varies, so the casts below are
+      // checked here instead: the name must exist on the generated ABI.
+      const writable: ContractFunctionName<typeof PERPS_ARENA_ABI, 'payable' | 'nonpayable'> = call.functionName;
       try {
-        const params = { account: walletClient.account, address: arena, abi: PERPS_ARENA_ABI, ...call } as const;
+        const params = { account: walletClient.account, address: arena, abi: PERPS_ARENA_ABI, ...call, functionName: writable } as const;
         // Simulate first so a refusal comes back with the contract's reason.
         const { request } = await browserClient.simulateContract(params as never);
         const gas = withHeadroom(await browserClient.estimateContractGas(params as never));
