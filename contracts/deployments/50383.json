@@ -1,14 +1,14 @@
 {
   "chainId": 50383,
-  "deployedAt": "2026-11-02T14:28:05.689Z",
+  "deployedAt": "2026-11-09T11:28:40.606Z",
   "deployer": "0x9572F2e86429c6260916143c57cA059030bab8E6",
   "contracts": {
-    "perpsArena": "0xd87C0477205aF17C8F33B1481f65c6d3F3B4EEa7"
+    "perpsArena": "0xf9ed11860D814BD688bB497df912Fc41fD832667"
   },
   "transactions": {
-    "deploy": "0x998cb2182723b7d9681bc80e4de28f2ec9a2ecfd24293bd73b927b5185d7bc22",
-    "fund": "0xf68480db49e5bfc3efcc8f366bc30904ef74f506fa27b01adc8aa94816c674fc",
-    "setCharging": "0xd0aeb41716ca163519f2dd84812ac67d3278d6c692ece1bddbc669c6fa7d5ed3"
+    "deploy": "0x5710272d636bdb14dd7972d7ed40abf4845796bb9ec426fa7726b4f373629f46",
+    "fund": "0xaabc1c2e712685519e2516eb69ac763a19eca566eed6e9b20e3dccb8107cbdb3",
+    "setCharging": "0x4aba1101679312860adcf70b1342ad1ef6027974a94430c98f11caa496cbff35"
   },
   "protocol": {
     "marginBank": "0x478769E1177C0773c43A593DCCc4Ad15F15F1394"
