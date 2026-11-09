@@ -569,13 +569,16 @@ export async function checkCapacity(plan: OrderPlan): Promise<void> {
 const orderArgs = (plan: OrderPlan) =>
   [plan.isBid, 0n, plan.price, plan.quantity, farFutureNs(), plan.orderType, 0, ZERO_ADDRESS, 0n] as const;
 
-/** The plan as the player's own `placeOrder` transaction, for their wallet to sign. */
-export function orderTransaction(plan: OrderPlan) {
-  return {
-    to: plan.market.pool,
-    data: encodeFunctionData({ abi: POOL_ABI, functionName: 'placeOrder', args: orderArgs(plan) }),
-    gas: ORDER_GAS,
-  };
+/**
+ * The plan as a transaction for the player's side to sign: `placeOrder` from
+ * their own wallet, or `placeOrderFor` from a bot the wallet linked.
+ */
+export function orderTransaction(plan: OrderPlan, signer: 'wallet' | 'linked-bot' = 'wallet') {
+  const data =
+    signer === 'wallet'
+      ? encodeFunctionData({ abi: POOL_ABI, functionName: 'placeOrder', args: orderArgs(plan) })
+      : encodeFunctionData({ abi: POOL_ABI, functionName: 'placeOrderFor', args: [plan.account.owner, ...orderArgs(plan)] });
+  return { to: plan.market.pool, data, gas: ORDER_GAS };
 }
 
 export async function execute(plan: OrderPlan): Promise<Execution> {
