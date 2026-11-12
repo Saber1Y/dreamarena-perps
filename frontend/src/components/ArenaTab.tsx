@@ -24,7 +24,7 @@ import { BOSS_ROUNDS, SURVIVAL_CHOICES, type AccountView, type ArenaView, type G
 import { countdown, pnl, pnlTone, price, usd } from '@/lib/format';
 import { DREAMDEX_ARENA, FAUCET } from '@/lib/chain';
 import { useWallet } from '@/lib/wallet';
-import { useLinkedBot } from '@/lib/linkedBot';
+import { useLinkedBot, type BotSource } from '@/lib/linkedBot';
 
 const GAME_COPY: Record<GameName, { title: string; rule: string; needs: string; icon: typeof Timer }> = {
   Survivor: {
@@ -134,28 +134,25 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
   );
 }
 
-/**
- * dreamDEX keeps paper USDso in its in-app wallet, which only trades through
- * linked bots. So the player makes a bot here, links it there, and plays.
- */
-function LinkBotSteps({ arena }: { arena: ArenaView | undefined }) {
-  const linked = useLinkedBot();
-  const toast = useToast();
+/** The market whose pool a link is checked on: the first one the app trades. */
+function useLinkPool() {
   const status = useAgentStatus();
   const markets = useMarkets();
-  const gas = useSttBalance(linked.bot);
+  return markets.data?.find((m) => m.symbol === (status.data?.limits.markets[0] ?? 'ETH'))?.pool as `0x${string}` | undefined;
+}
+
+/** Paste the dreamDEX wallet; the bot's link is checked on-chain before anything plays. */
+function LinkCheck({ via, disabled }: { via: BotSource; disabled?: boolean }) {
+  const linked = useLinkedBot();
+  const toast = useToast();
+  const pool = useLinkPool();
   const [wallet, setWallet] = useState('');
   const [checking, setChecking] = useState(false);
-  const minimum = arena ? arena.minRunCreditStt : 0.05;
-  // Enough for one run's credit and a few orders' gas ceilings.
-  const funded = gas.data !== undefined && gas.data >= minimum + 0.15;
-  const pool = markets.data?.find((m) => m.symbol === (status.data?.limits.markets[0] ?? 'ETH'))?.pool as `0x${string}` | undefined;
-
   const check = async () => {
     if (!pool) return;
     setChecking(true);
     try {
-      await linked.link(wallet, pool);
+      await linked.link(wallet, pool, via);
       toast.push({ type: 'success', title: 'Bot linked', detail: 'You are playing as your dreamDEX wallet.' });
     } catch (err) {
       toast.push({ type: 'error', title: 'Not linked yet', detail: err instanceof Error ? err.message : 'The link check failed.' });
@@ -163,29 +160,96 @@ function LinkBotSteps({ arena }: { arena: ArenaView | undefined }) {
       setChecking(false);
     }
   };
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-2">
+      <label htmlFor={`dreamdex-wallet-${via}`} className="sr-only">
+        Your dreamDEX wallet address
+      </label>
+      <input
+        id={`dreamdex-wallet-${via}`}
+        value={wallet}
+        onChange={(e) => setWallet(e.target.value.trim())}
+        placeholder="Your dreamDEX wallet, 0x…"
+        className="input num min-w-0 flex-1 text-xs"
+        spellCheck={false}
+      />
+      <button className="btn-primary px-4 py-2 text-sm" disabled={disabled || !wallet || !pool || checking} onClick={check}>
+        {checking ? 'Checking the link…' : 'Check link and play'}
+      </button>
+    </div>
+  );
+}
+
+const LINK_HOW = 'In dreamDEX, open your wallet, then Bot access, then Link a bot. Paste the bot address and allow Perps on the markets you want to play.';
+
+/**
+ * dreamDEX keeps paper USDso in its in-app wallet, which only trades through
+ * linked bots. The bot is the player's connected wallet, or a key made here.
+ */
+function LinkBotSteps({ arena }: { arena: ArenaView | undefined }) {
+  const linked = useLinkedBot();
+  const browser = useWallet();
+  const connected = browser.status === 'ready' && browser.address !== null;
+  const [via, setVia] = useState<BotSource>(connected ? 'wallet' : 'local');
+  const signer = via === 'wallet' ? (connected ? browser.address : null) : linked.localBot;
+  const gas = useSttBalance(signer);
+  const minimum = arena ? arena.minRunCreditStt : 0.05;
+  // Enough for one run's credit and a few orders' gas ceilings.
+  const funded = gas.data !== undefined && gas.data >= minimum + 0.15;
+
+  const choice = (id: BotSource, label: string) => (
+    <button
+      role="radio"
+      aria-checked={via === id}
+      onClick={() => setVia(id)}
+      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${via === id ? 'bg-text-primary text-background' : 'bg-elevated text-text-secondary hover:text-text-primary'}`}
+    >
+      {label}
+    </button>
+  );
+
+  const first: Step =
+    via === 'wallet'
+      ? {
+          title: 'Your bot: your connected wallet',
+          body: connected ? (
+            <>
+              <span className="num font-semibold text-text-primary">{browser.address}</span>
+              <br />
+              It signs each run and order in your wallet. No key is stored anywhere.
+            </>
+          ) : (
+            'Connect MetaMask or any browser wallet. It becomes the bot and signs for your dreamDEX wallet.'
+          ),
+          action: connected ? <CopyButton text={browser.address as string} label="Copy address" /> : <PlayButton className="btn-primary px-4 py-2 text-sm" />,
+          done: connected,
+        }
+      : {
+          title: 'Create your bot',
+          body: linked.localBot ? (
+            <>
+              <span className="num font-semibold text-text-primary">{linked.localBot}</span>
+              <br />
+              Its key lives only in this browser. Linked in dreamDEX, it can trade for your wallet, never withdraw.
+            </>
+          ) : (
+            'A trading key made in this browser and kept only here. No server ever sees it.'
+          ),
+          action: linked.localBot ? (
+            <CopyButton text={linked.localBot} label="Copy address" />
+          ) : (
+            <button className="btn-primary px-4 py-2 text-sm" onClick={linked.create}>
+              <Bot className="h-4 w-4" /> Create bot
+            </button>
+          ),
+          done: Boolean(linked.localBot),
+        };
 
   const steps: Step[] = [
-    {
-      title: 'Create your bot',
-      body: linked.bot ? (
-        <>
-          <span className="num font-semibold text-text-primary">{linked.bot}</span>
-          <br />
-          Its key lives only in this browser. Linked in dreamDEX, it can trade for your wallet, never withdraw.
-        </>
-      ) : (
-        'A trading key made in this browser and kept only here. No server ever sees it.'
-      ),
-      action: linked.bot ? <CopyButton text={linked.bot} label="Copy address" /> : (
-        <button className="btn-primary px-4 py-2 text-sm" onClick={linked.create}>
-          <Bot className="h-4 w-4" /> Create bot
-        </button>
-      ),
-      done: Boolean(linked.bot),
-    },
+    first,
     {
       title: 'Link it in dreamDEX',
-      body: 'In dreamDEX, open your wallet, then Bot access, then Link a bot. Paste the bot address and allow Perps on every market.',
+      body: LINK_HOW,
       action: (
         <a href="https://app.testnet.dreamdex.io" target="_blank" rel="noopener noreferrer" className="btn-secondary px-4 py-2 text-sm">
           dreamDEX <ExternalLink className="h-3.5 w-3.5" />
@@ -197,7 +261,7 @@ function LinkBotSteps({ arena }: { arena: ArenaView | undefined }) {
       body: (
         <>
           The bot pays its own gas and your run&apos;s {usd(minimum, 2)} STT callback credit. Use Top up on the bot in dreamDEX&apos;s Bot access, or send it
-          STT. {linked.bot && gas.data !== undefined && (
+          STT. {signer && gas.data !== undefined && (
             <span className={`num font-semibold ${funded ? 'text-success' : 'text-warning'}`}>It holds {usd(gas.data, 4)} STT.</span>
           )}
         </>
@@ -207,28 +271,43 @@ function LinkBotSteps({ arena }: { arena: ArenaView | undefined }) {
     },
     {
       title: 'Play as your dreamDEX wallet',
-      body: (
-        <div className="mt-1.5 flex flex-wrap gap-2">
-          <label htmlFor="dreamdex-wallet" className="sr-only">
-            Your dreamDEX wallet address
-          </label>
-          <input
-            id="dreamdex-wallet"
-            value={wallet}
-            onChange={(e) => setWallet(e.target.value.trim())}
-            placeholder="Your dreamDEX wallet, 0x…"
-            className="input num min-w-0 flex-1 text-xs"
-            spellCheck={false}
-          />
-          <button className="btn-primary px-4 py-2 text-sm" disabled={!linked.bot || !wallet || !pool || checking} onClick={check}>
-            {checking ? 'Checking the link…' : 'Check link and play'}
-          </button>
-        </div>
-      ),
+      body: <LinkCheck via={via} disabled={!signer} />,
       action: null,
     },
   ];
-  return <Steps steps={steps} />;
+  return (
+    <>
+      <div className="mt-4 flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Which bot">
+        <span className="eyebrow mr-1">Bot</span>
+        {choice('wallet', 'My browser wallet')}
+        {choice('local', 'A key made here')}
+      </div>
+      <Steps steps={steps} />
+    </>
+  );
+}
+
+/**
+ * A connected wallet with no margin of its own is usually a dreamDEX player's
+ * sign-in wallet, whose USDso sits in the in-app wallet. Offer to play that.
+ */
+function PlayDreamdexWallet({ address }: { address: string }) {
+  return (
+    <section className="surface tint-primary border border-primary p-5" aria-label="Play your dreamDEX wallet">
+      <h2 className="flex items-center gap-2 text-lg font-semibold">
+        <Bot className="h-5 w-5 text-primary" /> Is your USDso in dreamDEX&apos;s wallet?
+      </h2>
+      <p className="mt-1 max-w-[62ch] text-sm text-text-secondary">
+        dreamDEX keeps paper USDso in its in-app wallet, so this wallet has none. Link{' '}
+        <span className="num font-semibold text-text-primary">
+          {address.slice(0, 6)}…{address.slice(-4)}
+        </span>{' '}
+        as a bot there ({LINK_HOW.split('. ')[0].replace('In dreamDEX, ', '')}), then paste your dreamDEX wallet. This wallet then signs every run and order for it,
+        and can never withdraw from it.
+      </p>
+      <LinkCheck via="wallet" />
+    </section>
+  );
 }
 
 /** A browser wallet that holds its own paper USDso plays as itself. */
@@ -940,6 +1019,9 @@ export function ArenaTab() {
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
       <div className="space-y-5">
+        {actor.mode === 'wallet' && account.data && account.data.equityUsdso <= 0 && account.data.positions.length === 0 && (
+          <PlayDreamdexWallet address={actor.address} />
+        )}
         {deciding || arena.isLoading || !arena.data ? (
           <div className="surface h-72 skeleton" />
         ) : (

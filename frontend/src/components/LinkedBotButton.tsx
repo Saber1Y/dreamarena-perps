@@ -67,7 +67,7 @@ export function LinkedBotButton() {
                 </a>
               </div>
               <div>
-                <p className="eyebrow">Through your bot</p>
+                <p className="eyebrow">{linked.source === 'wallet' ? 'Signed by your wallet' : 'Through your bot'}</p>
                 <p className="num text-sm">{shortAddr(bot)}</p>
                 <p className={`num text-xs ${low ? 'text-warning' : 'text-text-muted'}`}>
                   {gas.data === undefined ? '…' : `${usd(gas.data, 4)} STT for gas and credit`}
@@ -81,6 +81,7 @@ export function LinkedBotButton() {
             <a href={addrUrl(bot)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-elevated">
               <ExternalLink className="h-4 w-4 text-text-muted" /> Bot on explorer
             </a>
+            {linked.source === 'local' && (
             <button
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-elevated"
               onClick={() => {
@@ -92,6 +93,7 @@ export function LinkedBotButton() {
             >
               <KeyRound className="h-4 w-4 text-text-muted" /> Export bot key
             </button>
+            )}
             <button
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-elevated"
               onClick={() => {
@@ -101,6 +103,7 @@ export function LinkedBotButton() {
             >
               <LogOut className="h-4 w-4 text-text-muted" /> Stop playing
             </button>
+            {linked.source === 'local' && (
             <button
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-danger hover:bg-elevated"
               onClick={() => {
@@ -112,6 +115,7 @@ export function LinkedBotButton() {
             >
               <Trash2 className="h-4 w-4" /> Delete bot
             </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
