@@ -27,7 +27,7 @@ Anyone can play, and nobody but the player holds a key.
 The server only plans each order with the agent's code (book, tick, lot, slippage, dreamDEX's margin check) and hands back the transaction to sign; it signs nothing.
 There are two ways in:
 
-- **A dreamDEX wallet, through a bot you link.** dreamDEX keeps paper USDso in its in-app wallet, a smart account that only trades through bots linked with Link a Bot. The app makes a bot key in the player's browser and keeps it only there; the player links it in dreamDEX, gives it a little STT for gas, and plays. The bot calls `startRunFor`, `placeOrderFor` and `withdrawCreditFor` for the wallet; dreamDEX's link lets it trade, never withdraw.
+- **A dreamDEX wallet, through a bot you link.** dreamDEX keeps paper USDso in its in-app wallet, a smart account that only trades through bots linked with Link a Bot. The bot is either the player's connected browser wallet, which then signs each run and order (a MetaMask sign-in wallet usually holds no USDso itself, so the app offers this as soon as it connects), or a key the app makes and keeps only in the player's browser. The player links it in dreamDEX, gives it a little STT for gas, and plays. The bot calls `startRunFor`, `placeOrderFor` and `withdrawCreditFor` for the wallet; dreamDEX's link lets it trade, never withdraw.
 - **A browser wallet** (MetaMask and the like) that holds its own margin plays as itself: connect, and the app adds and switches to Somnia Tokyo.
 
 Players get STT from the [faucet](https://explorer.testnet.somnia.network/tokyo/faucet) and paper USDso by joining dreamDEX's [Perps Arena](https://app.testnet.dreamdex.io/competition).
