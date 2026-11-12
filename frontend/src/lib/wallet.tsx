@@ -214,6 +214,9 @@ export function walletError(err: unknown): string {
       if (name) return ARENA_REASONS[name] ?? `The contract refused: ${name}.`;
     }
     if (/insufficient funds/i.test(err.message)) return 'Not enough STT for this transaction and its gas.';
+    if (err.walk((e) => (e as { code?: number }).code === 4100)) {
+      return 'Your wallet has not given this site that account on Somnia Tokyo. In your wallet, allow Somnia Tokyo for this site, or disconnect the site and connect again.';
+    }
     return err.shortMessage;
   }
   if ((err as { code?: number })?.code === 4001) return 'You declined the request in your wallet.';

@@ -1,9 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { decodeEventLog, getAddress, parseAbi, type Address, type ContractFunctionName, type Hex } from 'viem';
+import { decodeEventLog, getAddress, parseAbi, type Address, type ContractFunctionName, type Hex, type WalletClient } from 'viem';
 import { PERPS_ARENA_ABI } from '@/lib/abis';
-import { EXPLORER } from '@/lib/chain';
+import { EXPLORER, hideki } from '@/lib/chain';
 import { useLinkedBot } from '@/lib/linkedBot';
 import { browserClient, useWallet, walletError } from '@/lib/wallet';
 import type {
@@ -226,6 +226,32 @@ export type TradeInput =
 
 const NOT_PLAYING = 'Connect a wallet or link a bot first.';
 
+const errorCode = (err: unknown): number | undefined => {
+  for (let e = err as { code?: number; cause?: unknown } | undefined; e; e = e.cause as typeof e) {
+    if (typeof e.code === 'number') return e.code;
+  }
+  return undefined;
+};
+
+/**
+ * Signs with a browser wallet's grant in place. Newer MetaMask grants a site
+ * per account and network, so a site connected before Somnia Tokyo was added
+ * gets 4100 "not authorized" on its first transaction. Switching to the chain
+ * first asks the wallet to extend the grant; if it still refuses, request the
+ * account again and retry once. A key held in this browser needs neither.
+ */
+async function withWalletAccess<T>(walletClient: WalletClient, send: () => Promise<T>): Promise<T> {
+  if (walletClient.account?.type !== 'json-rpc') return send();
+  await walletClient.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: `0x${hideki.id.toString(16)}` }] });
+  try {
+    return await send();
+  } catch (err) {
+    if (errorCode(err) !== 4100) throw err;
+    await walletClient.request({ method: 'wallet_requestPermissions', params: [{ eth_accounts: {} }] });
+    return send();
+  }
+}
+
 export function useTrade(actor: Actor) {
   const refresh = useRefreshAfter();
   const walletClient = useSigner(actor);
@@ -239,7 +265,7 @@ export function useTrade(actor: Actor) {
       try {
         // A dry run first: a mined revert carries no reason, a call does.
         await browserClient.call(tx);
-        const hash = await walletClient.sendTransaction({ ...tx, chain: walletClient.chain });
+        const hash = await withWalletAccess(walletClient, () => walletClient.sendTransaction({ ...tx, chain: walletClient.chain }));
         return settled(order, actor.address, await confirmed(hash));
       } catch (err) {
         throw new ApiError(walletError(err));
@@ -307,7 +333,9 @@ export function useRunAction(actor: Actor) {
         // Simulate first so a refusal comes back with the contract's reason.
         const { request } = await browserClient.simulateContract(params as never);
         const gas = withHeadroom(await browserClient.estimateContractGas(params as never));
-        const hash = await walletClient.writeContract({ ...(request as object), gas, chain: walletClient.chain } as never);
+        const hash = await withWalletAccess(walletClient, () =>
+          walletClient.writeContract({ ...(request as object), gas, chain: walletClient.chain } as never),
+        );
         const receipt = await confirmed(hash);
         return { txHash: hash, explorer: `${EXPLORER}/tx/${hash}`, gasUsed: Number(receipt.gasUsed) };
       } catch (err) {
