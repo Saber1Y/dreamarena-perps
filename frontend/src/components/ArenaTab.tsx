@@ -370,7 +370,7 @@ function JoinArena({ arena }: { arena: ArenaView | undefined }) {
       </div>
       <p className="mt-2 text-xs text-text-muted">
         {path === 'dreamdex'
-          ? "Your paper USDso is in dreamDEX's in-app wallet. It trades through a bot you link, made in this browser."
+          ? "Your paper USDso is in dreamDEX's in-app wallet. It trades through a bot you link: your browser wallet, or a key made here."
           : 'For a wallet like MetaMask that holds its own USDso margin on dreamDEX.'}
       </p>
       {path === 'dreamdex' ? <LinkBotSteps arena={arena} /> : <WalletSteps arena={arena} />}
